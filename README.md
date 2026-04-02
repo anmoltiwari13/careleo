@@ -1,5 +1,7 @@
 # Careleo - Multi-tenant Healthcare SaaS
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/anmoltiwari13/careleo)
+
 Careleo is a production-oriented multi-tenant healthcare platform built with a Python-first backend and a modern React frontend.
 
 ## Stack
