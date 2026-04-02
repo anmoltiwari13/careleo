@@ -3,6 +3,7 @@
 set -e
 
 cd /app
+export PYTHONPATH="/app:${PYTHONPATH}"
 
 if [ -n "${RENDER_EXTERNAL_URL}" ]; then
   export FRONTEND_BASE_URL="${FRONTEND_BASE_URL:-$RENDER_EXTERNAL_URL}"
