@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
-from app.core.bootstrap import bootstrap_super_admin
+from app.core.bootstrap import bootstrap_arogya_ashram, bootstrap_super_admin
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.middleware.tenant import TenantMiddleware
@@ -16,6 +16,7 @@ from app.middleware.tenant import TenantMiddleware
 async def lifespan(_: FastAPI):
     async with AsyncSessionLocal() as session:
         await bootstrap_super_admin(session)
+        await bootstrap_arogya_ashram(session)
     yield
 
 
