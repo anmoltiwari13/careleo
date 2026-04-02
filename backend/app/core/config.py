@@ -1,4 +1,23 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+
+def _replace_query_param(url: str, source_key: str, target_key: str) -> str:
+    parts = urlsplit(url)
+    query_pairs = []
+    changed = False
+
+    for key, value in parse_qsl(parts.query, keep_blank_values=True):
+        if key == source_key:
+            query_pairs.append((target_key, value))
+            changed = True
+        else:
+            query_pairs.append((key, value))
+
+    if not changed:
+        return url
+
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query_pairs), parts.fragment))
 
 
 class Settings(BaseSettings):
@@ -33,14 +52,20 @@ class Settings(BaseSettings):
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
         if database_url.startswith("postgresql+asyncpg://"):
-            return database_url
+            return _replace_query_param(database_url, "sslmode", "ssl")
         if database_url.startswith("postgresql+psycopg2://"):
-            return database_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+            return _replace_query_param(
+                database_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1),
+                "sslmode",
+                "ssl",
+            )
         if database_url.startswith("postgresql://"):
-            return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return (
+            return _replace_query_param(database_url.replace("postgresql://", "postgresql+asyncpg://", 1), "sslmode", "ssl")
+        return _replace_query_param(
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}",
+            "sslmode",
+            "ssl",
         )
 
     @property
