@@ -839,6 +839,7 @@ export function DoctorClinicDashboardPage() {
                 key={patient.id}
                 type="button"
                 onClick={() => openPatientFromSearch(patient)}
+                onTouchEnd={() => openPatientFromSearch(patient)}
                 className="w-full rounded-2xl border px-3 py-3 text-left"
                 style={{
                   borderColor: selectedPatient?.id === patient.id ? (darkMode ? "#4f9fd5" : "#bad7ec") : (darkMode ? "#214459" : "#e1e8ed"),
