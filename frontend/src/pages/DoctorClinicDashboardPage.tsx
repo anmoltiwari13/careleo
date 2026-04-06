@@ -306,6 +306,8 @@ export function DoctorClinicDashboardPage() {
     observations: null,
   });
   const patientSearchRef = useRef<HTMLDivElement | null>(null);
+  const patientSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [patientPickerPosition, setPatientPickerPosition] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     localStorage.setItem("careleo_doctor_site_theme", darkMode ? "dark" : "light");
@@ -491,14 +493,34 @@ export function DoctorClinicDashboardPage() {
       return;
     }
 
+    function syncPatientPickerPosition() {
+      const inputBounds = patientSearchInputRef.current?.getBoundingClientRect();
+      if (!inputBounds) {
+        return;
+      }
+      setPatientPickerPosition({
+        top: inputBounds.bottom + 10,
+        left: inputBounds.left,
+        width: inputBounds.width,
+      });
+    }
+
     function handleClickOutside(event: MouseEvent) {
       if (!patientSearchRef.current?.contains(event.target as Node)) {
         setShowPatientPicker(false);
       }
     }
 
+    syncPatientPickerPosition();
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    window.addEventListener("resize", syncPatientPickerPosition);
+    window.addEventListener("scroll", syncPatientPickerPosition, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("resize", syncPatientPickerPosition);
+      window.removeEventListener("scroll", syncPatientPickerPosition, true);
+    };
   }, [showPatientPicker]);
 
   useEffect(() => {
@@ -1288,6 +1310,7 @@ export function DoctorClinicDashboardPage() {
                     <div className="relative flex-1">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: darkMode ? "#88adc5" : "#7a98ad" }} />
                       <input
+                        ref={patientSearchInputRef}
                         value={patientSearchInput}
                         onChange={(e) => {
                           setPatientSearchInput(e.target.value);
@@ -1302,19 +1325,6 @@ export function DoctorClinicDashboardPage() {
                         }}
                         placeholder="Search by patient name, ID, or address"
                       />
-                      {showPatientPicker ? (
-                        <div
-                          className="absolute left-0 right-0 top-[calc(100%+0.6rem)] z-20 hidden rounded-[24px] border p-2 shadow-2xl md:block"
-                          style={{
-                            borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                            backgroundColor: darkMode ? "#102332" : "#ffffff"
-                          }}
-                        >
-                          <div className="max-h-72">
-                            {renderPatientPickerContent()}
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -1461,6 +1471,22 @@ export function DoctorClinicDashboardPage() {
                       <div className="max-h-[68vh]">
                         {renderPatientPickerContent()}
                       </div>
+                    </div>
+                  </div>
+                ) : null}
+                {showPatientPicker && patientPickerPosition ? (
+                  <div
+                    className="fixed z-[80] hidden rounded-[24px] border p-2 shadow-2xl md:block"
+                    style={{
+                      top: patientPickerPosition.top,
+                      left: patientPickerPosition.left,
+                      width: patientPickerPosition.width,
+                      borderColor: darkMode ? "#2a5165" : "#d7e3eb",
+                      backgroundColor: darkMode ? "#102332" : "#ffffff"
+                    }}
+                  >
+                    <div className="max-h-72">
+                      {renderPatientPickerContent()}
                     </div>
                   </div>
                 ) : null}
