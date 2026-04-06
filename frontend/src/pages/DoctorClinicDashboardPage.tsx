@@ -282,6 +282,7 @@ export function DoctorClinicDashboardPage() {
   const [appointmentFilter, setAppointmentFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [patientSearchInput, setPatientSearchInput] = useState("");
   const [patientSearchQuery, setPatientSearchQuery] = useState("");
+  const [showPatientPicker, setShowPatientPicker] = useState(false);
   const [createdDateFilter, setCreatedDateFilter] = useState("all");
   const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem("careleo_doctor_site_theme") === "dark");
   const [inventoryDrafts, setInventoryDrafts] = useState<Record<number, PatientInventoryDraft>>({});
@@ -304,6 +305,7 @@ export function DoctorClinicDashboardPage() {
     appointments: null,
     observations: null,
   });
+  const patientSearchRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     localStorage.setItem("careleo_doctor_site_theme", darkMode ? "dark" : "light");
@@ -342,12 +344,20 @@ export function DoctorClinicDashboardPage() {
     return { [createdDateFilter]: groupedAppointmentsByCreatedDate[createdDateFilter] };
   }, [createdDateFilter, groupedAppointmentsByCreatedDate]);
 
+  const alphabeticalDoctorPatients = useMemo(
+    () =>
+      [...doctorPatients].sort((left, right) =>
+        left.full_name.localeCompare(right.full_name, undefined, { sensitivity: "base" })
+      ),
+    [doctorPatients]
+  );
+
   const filteredDoctorPatients = useMemo(() => {
     const query = patientSearchQuery.trim().toLowerCase();
     if (!query) {
       return [];
     }
-    return doctorPatients.filter((patient) => {
+    return alphabeticalDoctorPatients.filter((patient) => {
       return (
         String(patient.id).includes(query) ||
         patient.full_name.toLowerCase().includes(query) ||
@@ -356,7 +366,23 @@ export function DoctorClinicDashboardPage() {
         (patient.address || "").toLowerCase().includes(query)
       );
     });
-  }, [doctorPatients, patientSearchQuery]);
+  }, [alphabeticalDoctorPatients, patientSearchQuery]);
+
+  const patientPickerResults = useMemo(() => {
+    const query = patientSearchInput.trim().toLowerCase();
+    if (!query) {
+      return alphabeticalDoctorPatients;
+    }
+    return alphabeticalDoctorPatients.filter((patient) => {
+      return (
+        String(patient.id).includes(query) ||
+        patient.full_name.toLowerCase().includes(query) ||
+        patient.email.toLowerCase().includes(query) ||
+        (patient.phone || "").toLowerCase().includes(query) ||
+        (patient.address || "").toLowerCase().includes(query)
+      );
+    });
+  }, [alphabeticalDoctorPatients, patientSearchInput]);
 
   const todaysAppointments = useMemo(() => {
     const todayKey = new Date().toDateString();
@@ -459,6 +485,21 @@ export function DoctorClinicDashboardPage() {
       setSelectedPatientId(filteredDoctorPatients[0]?.id ?? null);
     }
   }, [filteredDoctorPatients, selectedPatientId]);
+
+  useEffect(() => {
+    if (!showPatientPicker) {
+      return;
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+      if (!patientSearchRef.current?.contains(event.target as Node)) {
+        setShowPatientPicker(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showPatientPicker]);
 
   useEffect(() => {
     if (!selectedPatient) {
@@ -735,6 +776,13 @@ export function DoctorClinicDashboardPage() {
   function scrollToSection(section: DashboardSection) {
     setActiveSection(section);
     sectionRefs.current[section]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function openPatientFromSearch(patient: DoctorPatientRecord) {
+    setPatientSearchInput(patient.full_name);
+    setPatientSearchQuery(patient.full_name);
+    setSelectedPatientId(patient.id);
+    setShowPatientPicker(false);
   }
 
   if (!isDoctor && !isAdmin) {
@@ -1184,12 +1232,16 @@ export function DoctorClinicDashboardPage() {
                     </div>
                     <Search className="h-5 w-5" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
                   </div>
-                  <div className="mt-4 flex gap-2">
+                  <div ref={patientSearchRef} className="mt-4 flex gap-2">
                     <div className="relative flex-1">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: darkMode ? "#88adc5" : "#7a98ad" }} />
                       <input
                         value={patientSearchInput}
-                        onChange={(e) => setPatientSearchInput(e.target.value)}
+                        onChange={(e) => {
+                          setPatientSearchInput(e.target.value);
+                          setShowPatientPicker(true);
+                        }}
+                        onFocus={() => setShowPatientPicker(true)}
                         className="w-full rounded-2xl border py-3 pl-10 pr-3 text-sm"
                         style={{
                           borderColor: darkMode ? "#2a5165" : "#d7e3eb",
@@ -1198,10 +1250,58 @@ export function DoctorClinicDashboardPage() {
                         }}
                         placeholder="Search by patient name, ID, or address"
                       />
+                      {showPatientPicker ? (
+                        <div
+                          className="absolute left-0 right-0 top-[calc(100%+0.6rem)] z-20 rounded-[24px] border p-2 shadow-2xl"
+                          style={{
+                            borderColor: darkMode ? "#2a5165" : "#d7e3eb",
+                            backgroundColor: darkMode ? "#102332" : "#ffffff"
+                          }}
+                        >
+                          <p className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: darkMode ? "#8fb2c8" : "#6f8798" }}>
+                            Patients A-Z
+                          </p>
+                          <div className="max-h-72 space-y-2 overflow-y-auto px-1 pb-1">
+                            {patientPickerResults.length === 0 ? (
+                              <div className="rounded-2xl px-3 py-4 text-sm" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>
+                                No patient records found.
+                              </div>
+                            ) : (
+                              patientPickerResults.map((patient) => (
+                                <button
+                                  key={patient.id}
+                                  type="button"
+                                  onClick={() => openPatientFromSearch(patient)}
+                                  className="w-full rounded-2xl border px-3 py-3 text-left"
+                                  style={{
+                                    borderColor: selectedPatient?.id === patient.id ? (darkMode ? "#4f9fd5" : "#bad7ec") : (darkMode ? "#214459" : "#e1e8ed"),
+                                    backgroundColor: selectedPatient?.id === patient.id ? (darkMode ? "#18374a" : "#f1f9fe") : (darkMode ? "#142636" : "#f9fcfe")
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold" style={{ color: darkMode ? "#eff8ff" : "#17354c" }}>{patient.full_name}</p>
+                                      <p className="truncate text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>
+                                        ID #{patient.id} · {patient.phone || patient.email}
+                                      </p>
+                                    </div>
+                                    <span className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#9ee0ff" : "#2f79bd" }}>
+                                      Select
+                                    </span>
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                     <button
                       type="button"
-                      onClick={() => setPatientSearchQuery(patientSearchInput)}
+                      onClick={() => {
+                        setPatientSearchQuery(patientSearchInput);
+                        setShowPatientPicker(true);
+                      }}
                       className="rounded-2xl px-4 py-3 text-sm font-semibold text-white"
                       style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}
                     >
