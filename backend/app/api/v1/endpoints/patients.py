@@ -56,6 +56,18 @@ def parse_drug_names(raw: str | None) -> list[str]:
         return []
 
 
+def parse_string_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed if str(item).strip()]
+        return []
+    except json.JSONDecodeError:
+        return []
+
+
 def build_patient_address(local_address: str | None, city: str | None, state: str | None, pincode: str | None) -> str | None:
     return ", ".join([part for part in [local_address, city, state, pincode] if part]) or None
 
@@ -275,6 +287,14 @@ async def doctor_patient_records(doctor_id: int, current_user: User = Depends(ge
                 "status": appointment.status.value,
                 "notes": appointment.notes,
                 "medical_files": parse_medical_files(appointment.medical_files),
+                "consultation_mode": appointment.consultation_mode,
+                "teleconsultation_link": appointment.teleconsultation_link,
+                "follow_up_date": appointment.follow_up_date.isoformat() if appointment.follow_up_date else None,
+                "reminder_channel": appointment.reminder_channel,
+                "fee_amount": appointment.fee_amount,
+                "receipt_number": appointment.receipt_number,
+                "payment_status": appointment.payment_status,
+                "payment_notes": appointment.payment_notes,
                 "created_at": appointment.created_at.isoformat() if appointment.created_at else None,
             }
         )
@@ -290,6 +310,7 @@ async def doctor_patient_records(doctor_id: int, current_user: User = Depends(ge
                 "instructions": prescription.instructions,
                 "start_date": prescription.start_date.isoformat() if prescription.start_date else None,
                 "end_date": prescription.end_date.isoformat() if prescription.end_date else None,
+                "printable_notes": prescription.printable_notes,
                 "created_at": prescription.created_at.isoformat() if prescription.created_at else None,
             }
         )
@@ -312,6 +333,13 @@ async def doctor_patient_records(doctor_id: int, current_user: User = Depends(ge
             "past_medication_history": inventory.past_medication_history,
             "surgical_history": inventory.surgical_history,
             "presenting_complaints": inventory.presenting_complaints,
+            "diet_plan": inventory.diet_plan,
+            "pathya": inventory.pathya,
+            "apathya": inventory.apathya,
+            "lab_reports": parse_string_list(inventory.lab_reports),
+            "document_vault": parse_string_list(inventory.document_vault),
+            "preferred_language": inventory.preferred_language,
+            "follow_up_notes": inventory.follow_up_notes,
             "created_at": inventory.created_at.isoformat() if inventory.created_at else None,
             "updated_at": inventory.updated_at.isoformat() if inventory.updated_at else None,
         }

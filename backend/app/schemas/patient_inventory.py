@@ -16,6 +16,13 @@ class PatientInventoryUpsert(BaseModel):
     past_medication_history: str | None = None
     surgical_history: str | None = None
     presenting_complaints: str | None = None
+    diet_plan: str | None = None
+    pathya: str | None = None
+    apathya: str | None = None
+    lab_reports: list[str] | None = None
+    document_vault: list[str] | None = None
+    preferred_language: str | None = None
+    follow_up_notes: str | None = None
 
 
 class PatientInventoryOut(PatientInventoryUpsert):

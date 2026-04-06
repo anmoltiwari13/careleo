@@ -16,6 +16,14 @@ interface DoctorAppointment {
   status: "pending" | "approved" | "rejected";
   notes?: string | null;
   medical_files?: string[] | null;
+  consultation_mode?: string | null;
+  teleconsultation_link?: string | null;
+  follow_up_date?: string | null;
+  reminder_channel?: string | null;
+  fee_amount?: string | null;
+  receipt_number?: string | null;
+  payment_status?: string | null;
+  payment_notes?: string | null;
   created_at?: string;
 }
 
@@ -43,6 +51,14 @@ interface DoctorPatientRecord {
     status: "pending" | "approved" | "rejected";
     notes?: string | null;
     medical_files?: string[] | null;
+    consultation_mode?: string | null;
+    teleconsultation_link?: string | null;
+    follow_up_date?: string | null;
+    reminder_channel?: string | null;
+    fee_amount?: string | null;
+    receipt_number?: string | null;
+    payment_status?: string | null;
+    payment_notes?: string | null;
     created_at?: string | null;
   }>;
   prescriptions?: Array<{
@@ -53,6 +69,7 @@ interface DoctorPatientRecord {
     instructions?: string | null;
     start_date?: string | null;
     end_date?: string | null;
+    printable_notes?: string | null;
     created_at?: string | null;
   }>;
   inventory?: {
@@ -71,6 +88,13 @@ interface DoctorPatientRecord {
     past_medication_history?: string | null;
     surgical_history?: string | null;
     presenting_complaints?: string | null;
+    diet_plan?: string | null;
+    pathya?: string | null;
+    apathya?: string | null;
+    lab_reports?: string[] | null;
+    document_vault?: string[] | null;
+    preferred_language?: string | null;
+    follow_up_notes?: string | null;
     created_at?: string | null;
     updated_at?: string | null;
   } | null;
@@ -98,6 +122,25 @@ interface PatientInventoryDraft {
   pastMedicationHistory: string;
   surgicalHistory: string;
   presentingComplaints: string;
+  dietPlan: string;
+  pathya: string;
+  apathya: string;
+  labReports: string;
+  documentVault: string;
+  preferredLanguage: string;
+  followUpNotes: string;
+}
+
+interface PatientSupportDraft {
+  consultationMode: string;
+  teleconsultationLink: string;
+  reminderChannel: string;
+  feeAmount: string;
+  receiptNumber: string;
+  paymentStatus: string;
+  paymentNotes: string;
+  followUpDate: string;
+  followUpTime: string;
 }
 
 interface NewPatientDraft extends PatientInventoryDraft {
@@ -169,6 +212,13 @@ function buildInventoryDraft(patient: DoctorPatientRecord): PatientInventoryDraf
     pastMedicationHistory: patient.inventory?.past_medication_history || "",
     surgicalHistory: patient.inventory?.surgical_history || "",
     presentingComplaints: patient.inventory?.presenting_complaints || "",
+    dietPlan: patient.inventory?.diet_plan || "",
+    pathya: (patient.inventory?.pathya || ""),
+    apathya: (patient.inventory?.apathya || ""),
+    labReports: (patient.inventory?.lab_reports || []).join("\n"),
+    documentVault: (patient.inventory?.document_vault || []).join("\n"),
+    preferredLanguage: patient.inventory?.preferred_language || "English",
+    followUpNotes: patient.inventory?.follow_up_notes || "",
   };
 }
 
@@ -186,7 +236,87 @@ function createEmptyInventoryDraft(): PatientInventoryDraft {
     pastMedicationHistory: "",
     surgicalHistory: "",
     presentingComplaints: "",
+    dietPlan: "",
+    pathya: "",
+    apathya: "",
+    labReports: "",
+    documentVault: "",
+    preferredLanguage: "English",
+    followUpNotes: "",
   };
+}
+
+function buildPatientSupportDraft(patient: DoctorPatientRecord): PatientSupportDraft {
+  const latestAppointment = patient.appointment_history?.[0];
+  const followUpDate = latestAppointment?.follow_up_date ? new Date(latestAppointment.follow_up_date) : null;
+  return {
+    consultationMode: latestAppointment?.consultation_mode || "In-person",
+    teleconsultationLink: latestAppointment?.teleconsultation_link || "",
+    reminderChannel: latestAppointment?.reminder_channel || "WhatsApp",
+    feeAmount: latestAppointment?.fee_amount || "",
+    receiptNumber: latestAppointment?.receipt_number || "",
+    paymentStatus: latestAppointment?.payment_status || "Pending",
+    paymentNotes: latestAppointment?.payment_notes || "",
+    followUpDate: followUpDate ? followUpDate.toISOString().slice(0, 10) : "",
+    followUpTime: followUpDate ? followUpDate.toISOString().slice(11, 16) : "10:00",
+  };
+}
+
+function createEmptyPatientSupportDraft(): PatientSupportDraft {
+  return {
+    consultationMode: "In-person",
+    teleconsultationLink: "",
+    reminderChannel: "WhatsApp",
+    feeAmount: "",
+    receiptNumber: "",
+    paymentStatus: "Pending",
+    paymentNotes: "",
+    followUpDate: "",
+    followUpTime: "10:00",
+  };
+}
+
+function linesToItems(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function buildReminderMessage(patient: DoctorPatientRecord, supportDraft: PatientSupportDraft, followUpNote: string): string {
+  return [
+    `Namaste ${patient.full_name},`,
+    supportDraft.followUpDate ? `Your follow-up with Arogya Ashram is scheduled for ${supportDraft.followUpDate} ${supportDraft.followUpTime}.` : "",
+    followUpNote ? `Doctor notes: ${followUpNote}` : "",
+    supportDraft.consultationMode ? `Consultation mode: ${supportDraft.consultationMode}.` : "",
+    supportDraft.teleconsultationLink ? `Teleconsultation link: ${supportDraft.teleconsultationLink}` : "",
+    "Please reply if you need to reschedule."
+  ].filter(Boolean).join(" ");
+}
+
+function openPrintWindow(title: string, bodyHtml: string) {
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
+  if (!popup) {
+    return;
+  }
+  popup.document.write(`
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: Georgia, serif; margin: 32px; color: #17354c; }
+          h1, h2, h3 { margin: 0 0 12px; }
+          .muted { color: #617b8f; font-size: 12px; }
+          .card { border: 1px solid #d8e1e7; border-radius: 16px; padding: 16px; margin-top: 16px; }
+          ul { padding-left: 20px; }
+        </style>
+      </head>
+      <body>${bodyHtml}</body>
+    </html>
+  `);
+  popup.document.close();
+  popup.focus();
+  popup.print();
 }
 
 function createEmptyNewPatientDraft(): NewPatientDraft {
@@ -286,7 +416,9 @@ export function DoctorClinicDashboardPage() {
   const [createdDateFilter, setCreatedDateFilter] = useState("all");
   const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem("careleo_doctor_site_theme") === "dark");
   const [inventoryDrafts, setInventoryDrafts] = useState<Record<number, PatientInventoryDraft>>({});
+  const [patientSupportDrafts, setPatientSupportDrafts] = useState<Record<number, PatientSupportDraft>>({});
   const [inventoryStatus, setInventoryStatus] = useState<Record<number, string>>({});
+  const [supportStatus, setSupportStatus] = useState<Record<number, string>>({});
   const [newPatientDraft, setNewPatientDraft] = useState<NewPatientDraft>(createEmptyNewPatientDraft());
   const [newPatientStatus, setNewPatientStatus] = useState("");
   const [newPatientPincodeStatus, setNewPatientPincodeStatus] = useState("");
@@ -409,6 +541,25 @@ export function DoctorClinicDashboardPage() {
     [selectedPatient]
   );
 
+  const clinicAnalytics = useMemo(() => {
+    const paidAppointments = doctorAppointments.filter((appointment) => appointment.payment_status?.toLowerCase() === "paid");
+    const teleconsultations = doctorAppointments.filter((appointment) => appointment.consultation_mode?.toLowerCase().includes("tele"));
+    const remindersConfigured = doctorAppointments.filter((appointment) => appointment.reminder_channel);
+    const totalRevenue = paidAppointments.reduce((sum, appointment) => sum + Number(appointment.fee_amount || 0), 0);
+    const preferredLanguageCount = doctorPatients.reduce<Record<string, number>>((accumulator, patient) => {
+      const language = patient.inventory?.preferred_language || "English";
+      accumulator[language] = (accumulator[language] || 0) + 1;
+      return accumulator;
+    }, {});
+    const topLanguage = Object.entries(preferredLanguageCount).sort((left, right) => right[1] - left[1])[0]?.[0] || "English";
+    return {
+      totalRevenue,
+      teleconsultations: teleconsultations.length,
+      remindersConfigured: remindersConfigured.length,
+      topLanguage,
+    };
+  }, [doctorAppointments, doctorPatients]);
+
   const sidebarAppointments = useMemo(
     () => (showAllSidebarAppointments ? todaysAppointments : todaysAppointments.slice(0, 5)),
     [showAllSidebarAppointments, todaysAppointments]
@@ -473,6 +624,18 @@ export function DoctorClinicDashboardPage() {
       for (const patient of doctorPatients) {
         if (!next[patient.id]) {
           next[patient.id] = buildInventoryDraft(patient);
+        }
+      }
+      return next;
+    });
+  }, [doctorPatients]);
+
+  useEffect(() => {
+    setPatientSupportDrafts((previous) => {
+      const next = { ...previous };
+      for (const patient of doctorPatients) {
+        if (!next[patient.id]) {
+          next[patient.id] = buildPatientSupportDraft(patient);
         }
       }
       return next;
@@ -579,7 +742,8 @@ export function DoctorClinicDashboardPage() {
           drug_names: drugNames,
           instructions: prescriptionDraft.instructions || undefined,
           start_date: prescriptionDraft.startDate || undefined,
-          end_date: prescriptionDraft.endDate || undefined
+          end_date: prescriptionDraft.endDate || undefined,
+          printable_notes: doctorObservations || undefined,
         },
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
@@ -614,6 +778,16 @@ export function DoctorClinicDashboardPage() {
     setNewPatientDraft((previous) => ({
       ...previous,
       [field]: value,
+    }));
+  }
+
+  function updatePatientSupportDraft(patientId: number, field: keyof PatientSupportDraft, value: string) {
+    setPatientSupportDrafts((previous) => ({
+      ...previous,
+      [patientId]: {
+        ...(previous[patientId] || createEmptyPatientSupportDraft()),
+        [field]: value,
+      },
     }));
   }
 
@@ -685,6 +859,13 @@ export function DoctorClinicDashboardPage() {
           past_medication_history: newPatientDraft.pastMedicationHistory.trim() || undefined,
           surgical_history: newPatientDraft.surgicalHistory.trim() || undefined,
           presenting_complaints: newPatientDraft.presentingComplaints.trim() || undefined,
+          diet_plan: newPatientDraft.dietPlan.trim() || undefined,
+          pathya: newPatientDraft.pathya.trim() || undefined,
+          apathya: newPatientDraft.apathya.trim() || undefined,
+          lab_reports: linesToItems(newPatientDraft.labReports),
+          document_vault: linesToItems(newPatientDraft.documentVault),
+          preferred_language: newPatientDraft.preferredLanguage.trim() || undefined,
+          follow_up_notes: newPatientDraft.followUpNotes.trim() || undefined,
         },
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
@@ -712,6 +893,10 @@ export function DoctorClinicDashboardPage() {
       setInventoryDrafts((previous) => ({
         ...previous,
         [createdPatient.id]: buildInventoryDraft(patientRecord),
+      }));
+      setPatientSupportDrafts((previous) => ({
+        ...previous,
+        [createdPatient.id]: createEmptyPatientSupportDraft(),
       }));
       setNewPatientDraft(createEmptyNewPatientDraft());
       setNewPatientStatus("Patient inventory created.");
@@ -745,6 +930,13 @@ export function DoctorClinicDashboardPage() {
           past_medication_history: draft.pastMedicationHistory || undefined,
           surgical_history: draft.surgicalHistory || undefined,
           presenting_complaints: draft.presentingComplaints || undefined,
+          diet_plan: draft.dietPlan || undefined,
+          pathya: draft.pathya || undefined,
+          apathya: draft.apathya || undefined,
+          lab_reports: linesToItems(draft.labReports),
+          document_vault: linesToItems(draft.documentVault),
+          preferred_language: draft.preferredLanguage || undefined,
+          follow_up_notes: draft.followUpNotes || undefined,
         },
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
@@ -758,6 +950,148 @@ export function DoctorClinicDashboardPage() {
         [patientId]: String(error?.response?.data?.detail ?? "Unable to save inventory."),
       }));
     }
+  }
+
+  async function savePatientSupportDetails(patientId: number) {
+    if (!authToken || !isDoctor) {
+      return;
+    }
+    const draft = patientSupportDrafts[patientId];
+    const latestAppointment = doctorPatients.find((patient) => patient.id === patientId)?.appointment_history?.[0];
+    if (!draft || !latestAppointment?.id) {
+      setSupportStatus((previous) => ({ ...previous, [patientId]: "Create or receive an appointment before saving support details." }));
+      return;
+    }
+    setSupportStatus((previous) => ({ ...previous, [patientId]: "Saving support details..." }));
+    try {
+      const followUpDateTime =
+        draft.followUpDate
+          ? `${draft.followUpDate}T${draft.followUpTime || "10:00"}:00`
+          : undefined;
+      await api.patch(
+        `/doctor-tenant/appointments/${latestAppointment.id}/details`,
+        {
+          consultation_mode: draft.consultationMode || undefined,
+          teleconsultation_link: draft.teleconsultationLink || undefined,
+          follow_up_date: followUpDateTime || undefined,
+          reminder_channel: draft.reminderChannel || undefined,
+          fee_amount: draft.feeAmount || undefined,
+          receipt_number: draft.receiptNumber || undefined,
+          payment_status: draft.paymentStatus || undefined,
+          payment_notes: draft.paymentNotes || undefined,
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      const patientsPath = `/patients/doctor/${effectiveDoctorId}/records`;
+      const { data } = await api.get(patientsPath, { headers: { Authorization: `Bearer ${authToken}` } });
+      setDoctorPatients(data as DoctorPatientRecord[]);
+      setSupportStatus((previous) => ({ ...previous, [patientId]: "Support details saved." }));
+    } catch (error: any) {
+      setSupportStatus((previous) => ({
+        ...previous,
+        [patientId]: String(error?.response?.data?.detail ?? "Unable to save support details."),
+      }));
+    }
+  }
+
+  async function bookFollowUp(patientId: number) {
+    if (!authToken || !isDoctor) {
+      return;
+    }
+    const draft = patientSupportDrafts[patientId];
+    if (!draft?.followUpDate) {
+      setSupportStatus((previous) => ({ ...previous, [patientId]: "Choose a follow-up date first." }));
+      return;
+    }
+    setSupportStatus((previous) => ({ ...previous, [patientId]: "Booking follow-up..." }));
+    try {
+      await api.post(
+        `/doctor-tenant/patients/${patientId}/follow-up`,
+        {
+          time: `${draft.followUpDate}T${draft.followUpTime || "10:00"}:00`,
+          notes: inventoryDrafts[patientId]?.followUpNotes || undefined,
+          consultation_mode: draft.consultationMode || undefined,
+          teleconsultation_link: draft.teleconsultationLink || undefined,
+          reminder_channel: draft.reminderChannel || undefined,
+          fee_amount: draft.feeAmount || undefined,
+          receipt_number: draft.receiptNumber || undefined,
+          payment_status: draft.paymentStatus || undefined,
+          payment_notes: draft.paymentNotes || undefined,
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      const [appointmentsRes, patientsRes] = await Promise.all([
+        api.get("/doctor-tenant/appointments", { headers: { Authorization: `Bearer ${authToken}` } }),
+        api.get(`/patients/doctor/${effectiveDoctorId}/records`, { headers: { Authorization: `Bearer ${authToken}` } }),
+      ]);
+      setDoctorAppointments(appointmentsRes.data as DoctorAppointment[]);
+      setDoctorPatients(patientsRes.data as DoctorPatientRecord[]);
+      setSupportStatus((previous) => ({ ...previous, [patientId]: "Follow-up booked." }));
+    } catch (error: any) {
+      setSupportStatus((previous) => ({
+        ...previous,
+        [patientId]: String(error?.response?.data?.detail ?? "Unable to book follow-up."),
+      }));
+    }
+  }
+
+  function openReminder(patient: DoctorPatientRecord, channel: "whatsapp" | "sms") {
+    const draft = patientSupportDrafts[patient.id] || createEmptyPatientSupportDraft();
+    const message = encodeURIComponent(buildReminderMessage(patient, draft, inventoryDrafts[patient.id]?.followUpNotes || ""));
+    const phone = (patient.phone || "").replace(/[^\d+]/g, "");
+    const url = channel === "whatsapp"
+      ? `https://wa.me/${phone.replace(/^\+/, "")}?text=${message}`
+      : `sms:${phone}?&body=${message}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function printPrescriptionPdf(patient: DoctorPatientRecord) {
+    const latestPrescription = patient.prescriptions?.[0];
+    const inventory = patient.inventory;
+    openPrintWindow(
+      `${patient.full_name} Prescription`,
+      `
+        <h1>Arogya Ashram Prescription</h1>
+        <p class="muted">Patient: ${patient.full_name} | Generated: ${new Date().toLocaleString()}</p>
+        <div class="card">
+          <h3>Diagnosis</h3>
+          <p>${latestPrescription?.diagnosis || inventory?.diagnosis || "-"}</p>
+          <h3>Medicines</h3>
+          <ul>${(latestPrescription?.drug_names || []).map((drug) => `<li>${drug}</li>`).join("") || "<li>-</li>"}</ul>
+          <h3>Instructions</h3>
+          <p>${latestPrescription?.instructions || inventory?.special_instruction || "-"}</p>
+          <h3>Diet Advice</h3>
+          <p>${inventory?.diet_plan || "-"}</p>
+          <h3>Pathya</h3>
+          <p>${inventory?.pathya || "-"}</p>
+          <h3>Apathya</h3>
+          <p>${inventory?.apathya || "-"}</p>
+        </div>
+      `
+    );
+  }
+
+  function printReceipt(patient: DoctorPatientRecord) {
+    const draft = patientSupportDrafts[patient.id] || createEmptyPatientSupportDraft();
+    openPrintWindow(
+      `${patient.full_name} Receipt`,
+      `
+        <h1>Arogya Ashram Receipt</h1>
+        <p class="muted">Receipt No: ${draft.receiptNumber || "Pending"} | Date: ${new Date().toLocaleDateString()}</p>
+        <div class="card">
+          <h3>Patient</h3>
+          <p>${patient.full_name}</p>
+          <h3>Consultation Mode</h3>
+          <p>${draft.consultationMode || "-"}</p>
+          <h3>Amount</h3>
+          <p>${draft.feeAmount || "-"}</p>
+          <h3>Payment Status</h3>
+          <p>${draft.paymentStatus || "-"}</p>
+          <h3>Notes</h3>
+          <p>${draft.paymentNotes || "-"}</p>
+        </div>
+      `
+    );
   }
 
   async function deletePatientRecord() {
@@ -779,6 +1113,16 @@ export function DoctorClinicDashboardPage() {
         return next;
       });
       setInventoryStatus((previous) => {
+        const next = { ...previous };
+        delete next[patientId];
+        return next;
+      });
+      setPatientSupportDrafts((previous) => {
+        const next = { ...previous };
+        delete next[patientId];
+        return next;
+      });
+      setSupportStatus((previous) => {
         const next = { ...previous };
         delete next[patientId];
         return next;
@@ -1735,6 +2079,16 @@ export function DoctorClinicDashboardPage() {
                         <textarea value={inventoryDrafts[selectedPatient.id]?.familyHistory || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "familyHistory", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Family history" />
                         <textarea value={inventoryDrafts[selectedPatient.id]?.pastMedicationHistory || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "pastMedicationHistory", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Past medication history" />
                         <textarea value={inventoryDrafts[selectedPatient.id]?.surgicalHistory || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "surgicalHistory", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Surgical history" />
+                        <select value={inventoryDrafts[selectedPatient.id]?.preferredLanguage || "English"} onChange={(e) => updateInventoryDraft(selectedPatient.id, "preferredLanguage", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }}>
+                          <option value="English">English</option>
+                          <option value="Hindi">Hindi</option>
+                        </select>
+                        <textarea value={inventoryDrafts[selectedPatient.id]?.dietPlan || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "dietPlan", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Diet plan / ahar advice" />
+                        <textarea value={inventoryDrafts[selectedPatient.id]?.pathya || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "pathya", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Pathya (recommended)" />
+                        <textarea value={inventoryDrafts[selectedPatient.id]?.apathya || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "apathya", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Apathya (avoid)" />
+                        <textarea value={inventoryDrafts[selectedPatient.id]?.labReports || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "labReports", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Lab report vault, one item per line" />
+                        <textarea value={inventoryDrafts[selectedPatient.id]?.documentVault || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "documentVault", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Document vault / shared files, one item per line" />
+                        <textarea value={inventoryDrafts[selectedPatient.id]?.followUpNotes || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "followUpNotes", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Follow-up plan and revisit notes" />
                       </div>
                       <div className="mt-4 flex flex-wrap items-center gap-3">
                         <button type="button" onClick={() => savePatientInventory(selectedPatient.id)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}>
@@ -1742,8 +2096,88 @@ export function DoctorClinicDashboardPage() {
                         </button>
                         {inventoryStatus[selectedPatient.id] ? <p className="text-xs font-semibold" style={{ color: darkMode ? "#9edbff" : "#335149" }}>{inventoryStatus[selectedPatient.id]}</p> : null}
                       </div>
+
+                      <div className="mt-6 grid gap-4 xl:grid-cols-2">
+                        <div className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
+                          <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Teleconsultation, Follow-up, Reminders</p>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <select value={patientSupportDrafts[selectedPatient.id]?.consultationMode || "In-person"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "consultationMode", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }}>
+                              <option value="In-person">In-person</option>
+                              <option value="Teleconsultation">Teleconsultation</option>
+                              <option value="Video call">Video call</option>
+                            </select>
+                            <select value={patientSupportDrafts[selectedPatient.id]?.reminderChannel || "WhatsApp"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "reminderChannel", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }}>
+                              <option value="WhatsApp">WhatsApp</option>
+                              <option value="SMS">SMS</option>
+                              <option value="Both">Both</option>
+                            </select>
+                            <input value={patientSupportDrafts[selectedPatient.id]?.teleconsultationLink || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "teleconsultationLink", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Video consultation link" />
+                            <input type="date" value={patientSupportDrafts[selectedPatient.id]?.followUpDate || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "followUpDate", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} />
+                            <input type="time" value={patientSupportDrafts[selectedPatient.id]?.followUpTime || "10:00"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "followUpTime", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} />
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button type="button" onClick={() => savePatientSupportDetails(selectedPatient.id)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}>
+                              Save Details
+                            </button>
+                            <button type="button" onClick={() => bookFollowUp(selectedPatient.id)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
+                              Book Follow-up
+                            </button>
+                            <button type="button" onClick={() => openReminder(selectedPatient, "whatsapp")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
+                              WhatsApp Reminder
+                            </button>
+                            <button type="button" onClick={() => openReminder(selectedPatient, "sms")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
+                              SMS Reminder
+                            </button>
+                          </div>
+                          {supportStatus[selectedPatient.id] ? <p className="mt-3 text-xs font-semibold" style={{ color: darkMode ? "#9edbff" : "#335149" }}>{supportStatus[selectedPatient.id]}</p> : null}
+                        </div>
+
+                        <div className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
+                          <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Billing, Receipts, Prescription PDF</p>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <input value={patientSupportDrafts[selectedPatient.id]?.feeAmount || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "feeAmount", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Consultation fee" />
+                            <input value={patientSupportDrafts[selectedPatient.id]?.receiptNumber || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "receiptNumber", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Receipt number" />
+                            <select value={patientSupportDrafts[selectedPatient.id]?.paymentStatus || "Pending"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "paymentStatus", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }}>
+                              <option value="Pending">Pending</option>
+                              <option value="Paid">Paid</option>
+                              <option value="Partially Paid">Partially Paid</option>
+                            </select>
+                            <textarea value={patientSupportDrafts[selectedPatient.id]?.paymentNotes || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "paymentNotes", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Billing notes" />
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button type="button" onClick={() => printPrescriptionPdf(selectedPatient)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}>
+                              Prescription PDF
+                            </button>
+                            <button type="button" onClick={() => printReceipt(selectedPatient)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
+                              Print Receipt
+                            </button>
+                            {patientSupportDrafts[selectedPatient.id]?.teleconsultationLink ? (
+                              <a href={patientSupportDrafts[selectedPatient.id]?.teleconsultationLink || "#"} target="_blank" rel="noreferrer" className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
+                                Open Video Link
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ) : null}
+
+                  <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
+                    <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Clinic Analytics Snapshot</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        { label: "Projected Revenue", value: `Rs ${clinicAnalytics.totalRevenue.toFixed(0)}` },
+                        { label: "Teleconsultations", value: String(clinicAnalytics.teleconsultations) },
+                        { label: "Reminder-ready Visits", value: String(clinicAnalytics.remindersConfigured) },
+                        { label: "Top Language", value: clinicAnalytics.topLanguage },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{item.label}</p>
+                          <p className="mt-2 text-lg font-semibold" style={{ color: darkMode ? "#f5fbff" : "#153047" }}>{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

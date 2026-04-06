@@ -18,7 +18,7 @@ from app.models.prescription import Prescription
 from app.models.user import User
 from app.schemas.doctor_patient import DoctorPatientCreate
 from app.schemas.patient_inventory import PatientInventoryOut, PatientInventoryUpsert
-from app.schemas.appointment import AppointmentDecision, AppointmentOut
+from app.schemas.appointment import AppointmentDecision, AppointmentDetailUpdate, AppointmentOut, FollowUpBookingCreate
 from app.schemas.prescription import PrescriptionCreate, PrescriptionOut
 
 router = APIRouter(prefix="/doctor-tenant", tags=["doctor-tenant"])
@@ -46,6 +46,47 @@ def parse_drug_names(raw: str | None) -> list[str]:
         return []
     except json.JSONDecodeError:
         return []
+
+
+def parse_string_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed if str(item).strip()]
+        return []
+    except json.JSONDecodeError:
+        return []
+
+
+def serialize_inventory(inventory: PatientInventory) -> dict:
+    return {
+        "id": inventory.id,
+        "doctor_id": inventory.doctor_id,
+        "patient_id": inventory.patient_id,
+        "religion": inventory.religion,
+        "diagnosis": inventory.diagnosis,
+        "investigation": inventory.investigation,
+        "investigation_date": inventory.investigation_date.isoformat() if inventory.investigation_date else None,
+        "finding": inventory.finding,
+        "finding_date": inventory.finding_date.isoformat() if inventory.finding_date else None,
+        "prescription": inventory.prescription,
+        "special_instruction": inventory.special_instruction,
+        "family_history": inventory.family_history,
+        "past_medication_history": inventory.past_medication_history,
+        "surgical_history": inventory.surgical_history,
+        "presenting_complaints": inventory.presenting_complaints,
+        "diet_plan": inventory.diet_plan,
+        "pathya": inventory.pathya,
+        "apathya": inventory.apathya,
+        "lab_reports": parse_string_list(inventory.lab_reports),
+        "document_vault": parse_string_list(inventory.document_vault),
+        "preferred_language": inventory.preferred_language,
+        "follow_up_notes": inventory.follow_up_notes,
+        "created_at": inventory.created_at.isoformat() if inventory.created_at else None,
+        "updated_at": inventory.updated_at.isoformat() if inventory.updated_at else None,
+    }
 
 
 def build_patient_address(local_address: str | None, city: str | None, state: str | None, pincode: str | None) -> str | None:
@@ -127,6 +168,14 @@ async def my_appointments(user: User = Depends(role_guard(UserRole.DOCTOR)), db:
                 status=appointment.status.value,
                 notes=appointment.notes,
                 medical_files=parse_medical_files(appointment.medical_files),
+                consultation_mode=appointment.consultation_mode,
+                teleconsultation_link=appointment.teleconsultation_link,
+                follow_up_date=appointment.follow_up_date,
+                reminder_channel=appointment.reminder_channel,
+                fee_amount=appointment.fee_amount,
+                receipt_number=appointment.receipt_number,
+                payment_status=appointment.payment_status,
+                payment_notes=appointment.payment_notes,
                 created_at=appointment.created_at,
             )
         )
@@ -151,6 +200,24 @@ async def decide_appointment(
     appointment.status = AppointmentStatus(requested)
     if payload.notes is not None:
         appointment.notes = payload.notes
+
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.patch("/appointments/{appointment_id}/details", dependencies=[Depends(role_guard(UserRole.DOCTOR))])
+async def update_appointment_details(
+    appointment_id: int,
+    payload: AppointmentDetailUpdate,
+    user: User = Depends(role_guard(UserRole.DOCTOR)),
+    db: AsyncSession = Depends(get_db),
+):
+    appointment = await db.scalar(select(Appointment).where(Appointment.id == appointment_id, Appointment.doctor_id == user.doctor_id))
+    if appointment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(appointment, field, value)
 
     await db.commit()
     return {"status": "ok"}
@@ -194,6 +261,13 @@ async def create_patient_with_inventory(
         past_medication_history=payload.past_medication_history,
         surgical_history=payload.surgical_history,
         presenting_complaints=payload.presenting_complaints,
+        diet_plan=payload.diet_plan,
+        pathya=payload.pathya,
+        apathya=payload.apathya,
+        lab_reports=json.dumps(payload.lab_reports or []),
+        document_vault=json.dumps(payload.document_vault or []),
+        preferred_language=payload.preferred_language,
+        follow_up_notes=payload.follow_up_notes,
     )
     db.add(inventory)
     await db.commit()
@@ -214,26 +288,62 @@ async def create_patient_with_inventory(
             "gender": patient.gender,
             "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else None,
         },
-        "inventory": {
-            "id": inventory.id,
-            "doctor_id": inventory.doctor_id,
-            "patient_id": inventory.patient_id,
-            "religion": inventory.religion,
-            "diagnosis": inventory.diagnosis,
-            "investigation": inventory.investigation,
-            "investigation_date": inventory.investigation_date.isoformat() if inventory.investigation_date else None,
-            "finding": inventory.finding,
-            "finding_date": inventory.finding_date.isoformat() if inventory.finding_date else None,
-            "prescription": inventory.prescription,
-            "special_instruction": inventory.special_instruction,
-            "family_history": inventory.family_history,
-            "past_medication_history": inventory.past_medication_history,
-            "surgical_history": inventory.surgical_history,
-            "presenting_complaints": inventory.presenting_complaints,
-            "created_at": inventory.created_at.isoformat() if inventory.created_at else None,
-            "updated_at": inventory.updated_at.isoformat() if inventory.updated_at else None,
-        },
+        "inventory": serialize_inventory(inventory),
     }
+
+
+@router.post("/patients/{patient_id}/follow-up", response_model=AppointmentOut, dependencies=[Depends(role_guard(UserRole.DOCTOR))])
+async def create_follow_up_booking(
+    patient_id: int,
+    payload: FollowUpBookingCreate,
+    user: User = Depends(role_guard(UserRole.DOCTOR)),
+    db: AsyncSession = Depends(get_db),
+):
+    patient = await db.scalar(select(Patient).where(Patient.id == patient_id, Patient.doctor_id == user.doctor_id))
+    if patient is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
+
+    appointment = Appointment(
+        doctor_id=user.doctor_id,
+        patient_id=patient.id,
+        patient_name_snapshot=patient.full_name,
+        patient_email_snapshot=patient.email,
+        time=payload.time,
+        status=AppointmentStatus.PENDING,
+        notes=payload.notes,
+        consultation_mode=payload.consultation_mode,
+        teleconsultation_link=payload.teleconsultation_link,
+        follow_up_date=payload.time,
+        reminder_channel=payload.reminder_channel,
+        fee_amount=payload.fee_amount,
+        receipt_number=payload.receipt_number,
+        payment_status=payload.payment_status,
+        payment_notes=payload.payment_notes,
+    )
+    db.add(appointment)
+    await db.commit()
+    await db.refresh(appointment)
+
+    return AppointmentOut(
+        id=appointment.id,
+        doctor_id=appointment.doctor_id,
+        patient_id=appointment.patient_id,
+        patient_name=appointment.patient_name_snapshot or patient.full_name,
+        patient_email=appointment.patient_email_snapshot or patient.email,
+        time=appointment.time,
+        status=appointment.status.value,
+        notes=appointment.notes,
+        medical_files=parse_medical_files(appointment.medical_files),
+        consultation_mode=appointment.consultation_mode,
+        teleconsultation_link=appointment.teleconsultation_link,
+        follow_up_date=appointment.follow_up_date,
+        reminder_channel=appointment.reminder_channel,
+        fee_amount=appointment.fee_amount,
+        receipt_number=appointment.receipt_number,
+        payment_status=appointment.payment_status,
+        payment_notes=appointment.payment_notes,
+        created_at=appointment.created_at,
+    )
 
 
 @router.delete("/patients/{patient_id}", dependencies=[Depends(role_guard(UserRole.DOCTOR))])
@@ -278,6 +388,7 @@ async def create_prescription(
         instructions=payload.instructions,
         start_date=payload.start_date,
         end_date=payload.end_date,
+        printable_notes=payload.printable_notes,
     )
     db.add(prescription)
     await db.commit()
@@ -293,6 +404,7 @@ async def create_prescription(
         instructions=prescription.instructions,
         start_date=prescription.start_date,
         end_date=prescription.end_date,
+        printable_notes=prescription.printable_notes,
         created_at=prescription.created_at,
     )
 
@@ -319,7 +431,10 @@ async def upsert_patient_inventory(
         db.add(inventory)
 
     updates = payload.model_dump()
+    list_fields = {"lab_reports", "document_vault"}
     for field, value in updates.items():
+        if field in list_fields:
+            value = json.dumps(value or [])
         setattr(inventory, field, value)
 
     await db.commit()
@@ -341,6 +456,13 @@ async def upsert_patient_inventory(
         past_medication_history=inventory.past_medication_history,
         surgical_history=inventory.surgical_history,
         presenting_complaints=inventory.presenting_complaints,
+        diet_plan=inventory.diet_plan,
+        pathya=inventory.pathya,
+        apathya=inventory.apathya,
+        lab_reports=parse_string_list(inventory.lab_reports),
+        document_vault=parse_string_list(inventory.document_vault),
+        preferred_language=inventory.preferred_language,
+        follow_up_notes=inventory.follow_up_notes,
         created_at=inventory.created_at,
         updated_at=inventory.updated_at,
     )

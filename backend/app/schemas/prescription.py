@@ -9,6 +9,7 @@ class PrescriptionCreate(BaseModel):
     instructions: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    printable_notes: str | None = None
 
 
 class PrescriptionOut(BaseModel):
@@ -21,4 +22,5 @@ class PrescriptionOut(BaseModel):
     instructions: str | None
     start_date: date | None
     end_date: date | None
+    printable_notes: str | None
     created_at: datetime

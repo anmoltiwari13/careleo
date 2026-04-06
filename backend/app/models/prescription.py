@@ -18,4 +18,5 @@ class Prescription(Base):
     instructions: Mapped[str | None] = mapped_column(Text)
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
+    printable_notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

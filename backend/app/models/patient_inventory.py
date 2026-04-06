@@ -24,6 +24,13 @@ class PatientInventory(Base):
     past_medication_history: Mapped[str | None] = mapped_column(Text)
     surgical_history: Mapped[str | None] = mapped_column(Text)
     presenting_complaints: Mapped[str | None] = mapped_column(Text)
+    diet_plan: Mapped[str | None] = mapped_column(Text)
+    pathya: Mapped[str | None] = mapped_column(Text)
+    apathya: Mapped[str | None] = mapped_column(Text)
+    lab_reports: Mapped[str | None] = mapped_column(Text)
+    document_vault: Mapped[str | None] = mapped_column(Text)
+    preferred_language: Mapped[str | None] = mapped_column(String(64))
+    follow_up_notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
