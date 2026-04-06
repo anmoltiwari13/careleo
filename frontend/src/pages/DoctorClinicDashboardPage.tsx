@@ -307,6 +307,7 @@ export function DoctorClinicDashboardPage() {
   });
   const patientSearchRef = useRef<HTMLDivElement | null>(null);
   const patientSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const patientPickerOverlayRef = useRef<HTMLDivElement | null>(null);
   const [patientPickerPosition, setPatientPickerPosition] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
@@ -506,7 +507,11 @@ export function DoctorClinicDashboardPage() {
     }
 
     function handleClickOutside(event: MouseEvent) {
-      if (!patientSearchRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !patientSearchRef.current?.contains(target) &&
+        !patientPickerOverlayRef.current?.contains(target)
+      ) {
         setShowPatientPicker(false);
       }
     }
@@ -1476,6 +1481,7 @@ export function DoctorClinicDashboardPage() {
                 ) : null}
                 {showPatientPicker && patientPickerPosition ? (
                   <div
+                    ref={patientPickerOverlayRef}
                     className="fixed z-[80] hidden rounded-[24px] border p-2 shadow-2xl md:block"
                     style={{
                       top: patientPickerPosition.top,
