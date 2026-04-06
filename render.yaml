@@ -18,6 +18,8 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      - key: JWT_EXP_MINUTES
+        value: "10080"
       - key: ENVIRONMENT
         value: production
       - key: BASE_DOMAIN
