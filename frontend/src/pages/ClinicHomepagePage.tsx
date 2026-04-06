@@ -15,7 +15,7 @@ import {
   Sun,
   UserRound
 } from "lucide-react";
-import { api } from "../api/client";
+import { api, SESSION_EXPIRED_MESSAGE } from "../api/client";
 import practitionerPortrait from "../assets/arogya/senior-ayurveda-practitioner.jpg";
 import logoJourneyVideo from "../assets/arogya/logo-to-video-generation.mp4";
 import { InteractiveLogoutButton } from "../components/InteractiveLogoutButton";
@@ -726,6 +726,9 @@ export function ClinicHomepagePage() {
       setTrackerStatus(`Live updates: ${new Date().toLocaleTimeString()}`);
     } catch (error: any) {
       setBookStatus(String(error?.response?.data?.detail ?? "Failed to submit appointment request."));
+      if (String(error?.response?.data?.detail ?? "") === SESSION_EXPIRED_MESSAGE) {
+        setAuthError(SESSION_EXPIRED_MESSAGE);
+      }
       setUploadStatus("");
     }
   }
@@ -840,6 +843,17 @@ export function ClinicHomepagePage() {
     setProfileMenuOpen(false);
     setAuthSuccess("Signed out.");
   }
+
+  useEffect(() => {
+    function handleSessionExpired() {
+      setAuthError(SESSION_EXPIRED_MESSAGE);
+      setAuthSuccess("");
+      setProfileMenuOpen(true);
+    }
+
+    window.addEventListener("careleo:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("careleo:session-expired", handleSessionExpired);
+  }, []);
 
   function answerQuiz(option: QuizOption) {
     const nextAnswers = [...quizAnswers];

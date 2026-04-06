@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
+export const SESSION_EXPIRED_MESSAGE = "Session expired. Please sign in again.";
 
 export const api = axios.create({
   baseURL: API_BASE
@@ -14,6 +15,8 @@ api.interceptors.response.use(
       localStorage.removeItem("careleo_clinic_token");
       localStorage.removeItem("careleo_admin_token");
       setAuthToken(undefined);
+      error.response.data.detail = SESSION_EXPIRED_MESSAGE;
+      window.dispatchEvent(new Event("careleo:session-expired"));
     }
     return Promise.reject(error);
   }
