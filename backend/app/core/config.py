@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
-    jwt_exp_minutes: int = 60
+    jwt_exp_minutes: int = 10080
 
     base_domain: str = "careleo.local"
     cors_origins: str = "http://localhost:5173"
