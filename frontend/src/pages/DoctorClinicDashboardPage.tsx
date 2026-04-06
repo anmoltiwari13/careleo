@@ -785,6 +785,58 @@ export function DoctorClinicDashboardPage() {
     setShowPatientPicker(false);
   }
 
+  function renderPatientPickerContent() {
+    return (
+      <>
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: darkMode ? "#8fb2c8" : "#6f8798" }}>
+            Patients A-Z
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowPatientPicker(false)}
+            className="rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em]"
+            style={{ color: darkMode ? "#d5e9f6" : "#234863" }}
+          >
+            Close
+          </button>
+        </div>
+        <div className="space-y-2 overflow-y-auto px-1 pb-1">
+          {patientPickerResults.length === 0 ? (
+            <div className="rounded-2xl px-3 py-4 text-sm" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>
+              No patient records found.
+            </div>
+          ) : (
+            patientPickerResults.map((patient) => (
+              <button
+                key={patient.id}
+                type="button"
+                onClick={() => openPatientFromSearch(patient)}
+                className="w-full rounded-2xl border px-3 py-3 text-left"
+                style={{
+                  borderColor: selectedPatient?.id === patient.id ? (darkMode ? "#4f9fd5" : "#bad7ec") : (darkMode ? "#214459" : "#e1e8ed"),
+                  backgroundColor: selectedPatient?.id === patient.id ? (darkMode ? "#18374a" : "#f1f9fe") : (darkMode ? "#142636" : "#f9fcfe")
+                }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold" style={{ color: darkMode ? "#eff8ff" : "#17354c" }}>{patient.full_name}</p>
+                    <p className="truncate text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>
+                      ID #{patient.id} · {patient.phone || patient.email}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#9ee0ff" : "#2f79bd" }}>
+                    Select
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </>
+    );
+  }
+
   if (!isDoctor && !isAdmin) {
     return (
       <main className="min-h-screen bg-[#f4f1e7] px-4 py-16">
@@ -1252,46 +1304,14 @@ export function DoctorClinicDashboardPage() {
                       />
                       {showPatientPicker ? (
                         <div
-                          className="absolute left-0 right-0 top-[calc(100%+0.6rem)] z-20 rounded-[24px] border p-2 shadow-2xl"
+                          className="absolute left-0 right-0 top-[calc(100%+0.6rem)] z-20 hidden rounded-[24px] border p-2 shadow-2xl md:block"
                           style={{
                             borderColor: darkMode ? "#2a5165" : "#d7e3eb",
                             backgroundColor: darkMode ? "#102332" : "#ffffff"
                           }}
                         >
-                          <p className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: darkMode ? "#8fb2c8" : "#6f8798" }}>
-                            Patients A-Z
-                          </p>
-                          <div className="max-h-72 space-y-2 overflow-y-auto px-1 pb-1">
-                            {patientPickerResults.length === 0 ? (
-                              <div className="rounded-2xl px-3 py-4 text-sm" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>
-                                No patient records found.
-                              </div>
-                            ) : (
-                              patientPickerResults.map((patient) => (
-                                <button
-                                  key={patient.id}
-                                  type="button"
-                                  onClick={() => openPatientFromSearch(patient)}
-                                  className="w-full rounded-2xl border px-3 py-3 text-left"
-                                  style={{
-                                    borderColor: selectedPatient?.id === patient.id ? (darkMode ? "#4f9fd5" : "#bad7ec") : (darkMode ? "#214459" : "#e1e8ed"),
-                                    backgroundColor: selectedPatient?.id === patient.id ? (darkMode ? "#18374a" : "#f1f9fe") : (darkMode ? "#142636" : "#f9fcfe")
-                                  }}
-                                >
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold" style={{ color: darkMode ? "#eff8ff" : "#17354c" }}>{patient.full_name}</p>
-                                      <p className="truncate text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>
-                                        ID #{patient.id} · {patient.phone || patient.email}
-                                      </p>
-                                    </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#9ee0ff" : "#2f79bd" }}>
-                                      Select
-                                    </span>
-                                  </div>
-                                </button>
-                              ))
-                            )}
+                          <div className="max-h-72">
+                            {renderPatientPickerContent()}
                           </div>
                         </div>
                       ) : null}
@@ -1428,6 +1448,22 @@ export function DoctorClinicDashboardPage() {
                     )}
                   </div>
                 </div>
+                {showPatientPicker ? (
+                  <div className="fixed inset-0 z-40 flex items-end bg-slate-950/55 px-3 py-4 md:hidden">
+                    <div
+                      className="w-full rounded-t-[28px] border p-3 shadow-2xl"
+                      style={{
+                        borderColor: darkMode ? "#2a5165" : "#d7e3eb",
+                        backgroundColor: darkMode ? "#102332" : "#ffffff"
+                      }}
+                    >
+                      <div className="mx-auto mb-3 h-1.5 w-14 rounded-full" style={{ backgroundColor: darkMode ? "#31596f" : "#d4e0e8" }} />
+                      <div className="max-h-[68vh]">
+                        {renderPatientPickerContent()}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
 
