@@ -6,8 +6,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ["Sora", "sans-serif"],
-        body: ["Manrope", "sans-serif"]
+        display: ["Lato", "Sora", "sans-serif"],
+        body: ["Open Sans", "Manrope", "sans-serif"]
       },
       boxShadow: {
         glass: "0 8px 32px rgba(15, 23, 42, 0.25)"

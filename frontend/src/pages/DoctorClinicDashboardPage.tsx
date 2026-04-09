@@ -1,10 +1,11 @@
-import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Activity, CalendarClock, CheckCircle2, ClipboardPenLine, Leaf, Moon, Pill, Search, Stethoscope, Sun, UserRound, Users, XCircle } from "lucide-react";
+import { Activity, CalendarClock, CheckCircle2, ClipboardPenLine, Copy, Leaf, MessageSquare, Moon, Phone, Pill, Search, Send, Stethoscope, Sun, UserRound, Users, XCircle } from "lucide-react";
 import { api } from "../api/client";
 import { InteractiveLogoutButton } from "../components/InteractiveLogoutButton";
 import { MotionText, PageFade } from "../components/Motion";
+import { ActionButton, MetricCard, SectionHeader, SurfaceCard } from "../components/dashboard/DoctorDashboardPrimitives";
 
 interface DoctorAppointment {
   id: number;
@@ -143,6 +144,12 @@ interface PatientSupportDraft {
   followUpTime: string;
 }
 
+interface PatientMessageDraft {
+  subject: string;
+  body: string;
+  channel: "whatsapp" | "sms";
+}
+
 interface NewPatientDraft extends PatientInventoryDraft {
   fullName: string;
   email: string;
@@ -169,6 +176,31 @@ interface DoctorProfile {
 }
 
 type DashboardSection = "overview" | "patient-records" | "appointments" | "observations";
+type IntakeStepKey = "personal" | "symptoms" | "treatment" | "history";
+
+const INTAKE_STEPS: Array<{ key: IntakeStepKey; label: string; description: string }> = [
+  { key: "personal", label: "Personal Info", description: "Demographics and contact details" },
+  { key: "symptoms", label: "Symptoms & Diagnosis", description: "Complaint, diagnosis, and investigations" },
+  { key: "treatment", label: "Treatment Plan", description: "Vitals, notes, and prescriptions" },
+  { key: "history", label: "History", description: "Past medical, surgical, and family history" },
+];
+
+const ICD10_SUGGESTIONS = [
+  "A09 - Infectious gastroenteritis and colitis, unspecified",
+  "E11.9 - Type 2 diabetes mellitus without complications",
+  "I10 - Essential (primary) hypertension",
+  "J06.9 - Acute upper respiratory infection, unspecified",
+  "J45.909 - Unspecified asthma, uncomplicated",
+  "K21.9 - Gastro-esophageal reflux disease without esophagitis",
+  "M54.5 - Low back pain",
+  "M79.1 - Myalgia",
+  "R05 - Cough",
+  "R50.9 - Fever, unspecified",
+];
+
+const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"];
+const RELIGION_OPTIONS = ["Hindu", "Muslim", "Christian", "Sikh", "Buddhist", "Jain", "Other"];
+const LANGUAGE_OPTIONS = ["English", "Hindi", "Marathi", "Gujarati", "Punjabi", "Bengali"];
 
 function parseBrandColors(colors?: string | null): [string, string] {
   if (!colors) {
@@ -294,29 +326,98 @@ function buildReminderMessage(patient: DoctorPatientRecord, supportDraft: Patien
   ].filter(Boolean).join(" ");
 }
 
-function openPrintWindow(title: string, bodyHtml: string) {
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
+function buildMessageDraft(patient: DoctorPatientRecord, supportDraft: PatientSupportDraft, followUpNote: string): PatientMessageDraft {
+  return {
+    subject: supportDraft.followUpDate ? "Follow-up confirmation" : "Care follow-up",
+    body: buildReminderMessage(patient, supportDraft, followUpNote),
+    channel: supportDraft.reminderChannel.toLowerCase().includes("sms") ? "sms" : "whatsapp",
+  };
+}
+
+function openPrintWindow(title: string, bodyHtml: string, logoUrl?: string) {
+  const popup = window.open("", "_blank", "width=960,height=720");
   if (!popup) {
+    console.error("Popup blocked");
+    alert("Popups are blocked. Please allow popups for this site to print.");
     return;
   }
+  
+  const bgImage = logoUrl 
+    ? `url('${logoUrl}')` 
+    : `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="%232f7d6b" opacity="0.05"><path d="M50 0C50 0 20 20 20 50C20 80 50 100 50 100C50 100 80 80 80 50C80 20 50 0 50 0Z" /><path d="M50 20C50 20 30 40 30 65C30 90 50 100 50 100C50 100 70 90 70 65C70 40 50 20 50 20Z" fill="%230f5d73"/></svg>')`;
+
+  popup.document.open();
   popup.document.write(`
+    <!DOCTYPE html>
     <html>
       <head>
         <title>${title}</title>
         <style>
-          body { font-family: Georgia, serif; margin: 32px; color: #17354c; }
-          h1, h2, h3 { margin: 0 0 12px; }
-          .muted { color: #617b8f; font-size: 12px; }
-          .card { border: 1px solid #d8e1e7; border-radius: 16px; padding: 16px; margin-top: 16px; }
-          ul { padding-left: 20px; }
+          body { 
+            font-family: 'Georgia', serif; 
+            margin: 0; 
+            padding: 40px; 
+            color: #17354c; 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f6fbf8;
+            text-align: center;
+          }
+          h1 { margin: 0 0 16px; font-size: 2.4rem; color: #0f5d73; }
+          .muted { color: #5c7488; font-size: 14px; margin-bottom: 24px; font-weight: 500; }
+          .card { 
+            position: relative;
+            border: 1px solid rgba(47, 125, 107, 0.2); 
+            border-radius: 24px; 
+            padding: 40px; 
+            background: #ffffff; 
+            max-width: 680px; 
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
+            overflow: hidden;
+          }
+          .card::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 80%;
+            background-image: ${bgImage};
+            background-repeat: no-repeat;
+            background-size: contain;
+            background-position: center;
+            opacity: 0.12;
+            pointer-events: none;
+            z-index: 0;
+          }
+          .card > * {
+            position: relative;
+            z-index: 1;
+          }
+          h2, h3 { margin: 24px 0 8px; color: #2f7d6b; text-transform: uppercase; font-size: 1.1rem; letter-spacing: 0.15em; }
+          ul { padding: 0; list-style: none; margin: 0; }
+          p, li { font-size: 1.15rem; line-height: 1.7; margin: 0; }
         </style>
       </head>
-      <body>${bodyHtml}</body>
+      <body>
+        ${bodyHtml}
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          };
+        </script>
+      </body>
     </html>
   `);
   popup.document.close();
   popup.focus();
-  popup.print();
 }
 
 function createEmptyNewPatientDraft(): NewPatientDraft {
@@ -378,6 +479,72 @@ function buildSparklinePath(points: number[], width = 140, height = 36): string 
     .join(" ");
 }
 
+function formatDate(value?: string | null): string {
+  if (!value) {
+    return "Not recorded";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "Not recorded" : parsed.toLocaleDateString();
+}
+
+function formatDateTime(value?: string | null): string {
+  if (!value) {
+    return "Not scheduled";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "Not scheduled" : parsed.toLocaleString();
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((part) => part.trim()[0] || "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function deriveBloodType(patient: DoctorPatientRecord): string {
+  const candidates = [
+    patient.inventory?.finding,
+    patient.inventory?.special_instruction,
+    patient.inventory?.follow_up_notes,
+    patient.inventory?.lab_reports?.join(" "),
+  ];
+  for (const entry of candidates) {
+    const match = entry?.match(/\b(?:A|B|AB|O)[+-]\b/i);
+    if (match?.[0]) {
+      return match[0].toUpperCase();
+    }
+  }
+  return "Pending";
+}
+
+function deriveAllergySummary(patient: DoctorPatientRecord): string {
+  const candidates = [
+    patient.inventory?.special_instruction,
+    patient.inventory?.past_medication_history,
+    patient.inventory?.follow_up_notes,
+    patient.inventory?.family_history,
+  ];
+  for (const entry of candidates) {
+    if (entry && /allerg/i.test(entry)) {
+      return entry;
+    }
+  }
+  return "Not recorded";
+}
+
+function getAppointmentTone(appointment: DoctorAppointment): "completed" | "late" | "upcoming" {
+  if (appointment.status === "approved") {
+    return "completed";
+  }
+  if (appointment.status === "rejected") {
+    return "late";
+  }
+  return new Date(appointment.time).getTime() < Date.now() ? "late" : "upcoming";
+}
+
 export function DoctorClinicDashboardPage() {
   const { id } = useParams();
   const clinicToken = localStorage.getItem("careleo_clinic_token");
@@ -417,8 +584,10 @@ export function DoctorClinicDashboardPage() {
   const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem("careleo_doctor_site_theme") === "dark");
   const [inventoryDrafts, setInventoryDrafts] = useState<Record<number, PatientInventoryDraft>>({});
   const [patientSupportDrafts, setPatientSupportDrafts] = useState<Record<number, PatientSupportDraft>>({});
+  const [patientMessageDrafts, setPatientMessageDrafts] = useState<Record<number, PatientMessageDraft>>({});
   const [inventoryStatus, setInventoryStatus] = useState<Record<number, string>>({});
   const [supportStatus, setSupportStatus] = useState<Record<number, string>>({});
+  const [messageStatus, setMessageStatus] = useState<Record<number, string>>({});
   const [newPatientDraft, setNewPatientDraft] = useState<NewPatientDraft>(createEmptyNewPatientDraft());
   const [newPatientStatus, setNewPatientStatus] = useState("");
   const [newPatientPincodeStatus, setNewPatientPincodeStatus] = useState("");
@@ -431,7 +600,10 @@ export function DoctorClinicDashboardPage() {
   const [patientPendingDelete, setPatientPendingDelete] = useState<DoctorPatientRecord | null>(null);
   const [isDeletingPatient, setIsDeletingPatient] = useState(false);
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
-  const sectionRefs = useRef<Record<DashboardSection, HTMLDivElement | null>>({
+  const [showAdminInsights, setShowAdminInsights] = useState(false);
+  const [newPatientStep, setNewPatientStep] = useState<IntakeStepKey>("personal");
+  const [selectedPatientStep, setSelectedPatientStep] = useState<IntakeStepKey>("personal");
+  const sectionRefs = useRef<Record<DashboardSection, HTMLElement | null>>({
     overview: null,
     "patient-records": null,
     appointments: null,
@@ -490,7 +662,7 @@ export function DoctorClinicDashboardPage() {
   const filteredDoctorPatients = useMemo(() => {
     const query = patientSearchQuery.trim().toLowerCase();
     if (!query) {
-      return [];
+      return alphabeticalDoctorPatients;
     }
     return alphabeticalDoctorPatients.filter((patient) => {
       return (
@@ -527,14 +699,11 @@ export function DoctorClinicDashboardPage() {
   }, [doctorAppointments]);
 
   const selectedPatient = useMemo(() => {
-    if (filteredDoctorPatients.length === 0) {
+    if (selectedPatientId === null) {
       return null;
     }
-    if (selectedPatientId === null) {
-      return filteredDoctorPatients[0];
-    }
-    return filteredDoctorPatients.find((patient) => patient.id === selectedPatientId) || filteredDoctorPatients[0];
-  }, [filteredDoctorPatients, selectedPatientId]);
+    return doctorPatients.find((patient) => patient.id === selectedPatientId) || null;
+  }, [doctorPatients, selectedPatientId]);
 
   const selectedPatientMetrics = useMemo(
     () => (selectedPatient ? buildPatientMetrics(selectedPatient) : []),
@@ -561,12 +730,12 @@ export function DoctorClinicDashboardPage() {
   }, [doctorAppointments, doctorPatients]);
 
   const sidebarAppointments = useMemo(
-    () => (showAllSidebarAppointments ? todaysAppointments : todaysAppointments.slice(0, 5)),
+    () => (showAllSidebarAppointments ? todaysAppointments : todaysAppointments.slice(0, 6)),
     [showAllSidebarAppointments, todaysAppointments]
   );
 
   const visiblePatientDirectory = useMemo(
-    () => (showAllPatientDirectory ? filteredDoctorPatients : filteredDoctorPatients.slice(0, 5)),
+    () => (showAllPatientDirectory ? filteredDoctorPatients : filteredDoctorPatients.slice(0, 6)),
     [filteredDoctorPatients, showAllPatientDirectory]
   );
 
@@ -579,6 +748,79 @@ export function DoctorClinicDashboardPage() {
     const history = selectedPatient?.appointment_history || [];
     return showAllPatientHistory ? history : history.slice(0, 5);
   }, [selectedPatient, showAllPatientHistory]);
+
+  const [brandPrimary, brandSecondary] = brandColors;
+  const theme = {
+    pageBackground: darkMode
+      ? "radial-gradient(circle at 12% 14%, rgba(59, 130, 246, 0.18), transparent 32%), radial-gradient(circle at 86% 10%, rgba(14, 165, 233, 0.15), transparent 28%), linear-gradient(180deg, #07121d 0%, #0d1f2d 44%, #102538 100%)"
+      : "radial-gradient(circle at 14% 14%, rgba(96, 165, 250, 0.22), transparent 32%), radial-gradient(circle at 86% 8%, rgba(56, 189, 248, 0.18), transparent 28%), linear-gradient(180deg, #f3f8ff 0%, #ebf4ff 42%, #f8fbff 100%)",
+    shell: darkMode ? "rgba(11, 25, 37, 0.78)" : "rgba(255, 255, 255, 0.82)",
+    shellBorder: darkMode ? "#20384b" : "#d9e5f1",
+    panel: darkMode ? "rgba(12, 27, 39, 0.92)" : "rgba(255, 255, 255, 0.94)",
+    panelBorder: darkMode ? "#1e3a4f" : "#d9e5f1",
+    surface: darkMode ? "#102435" : "#ffffff",
+    surfaceAlt: darkMode ? "#122b3f" : "#f8fbfe",
+    input: darkMode ? "#0d2232" : "#f8fbff",
+    text: darkMode ? "#edf6ff" : "#0f172a",
+    textMuted: darkMode ? "#9fb3c8" : "#64748b",
+    textSubtle: darkMode ? "#c8d7e6" : "#334155",
+    accent: darkMode ? "#7dd3fc" : "#2563eb",
+    accentStrong: darkMode ? "#38bdf8" : "#1d4ed8",
+    accentSoft: darkMode ? "rgba(56, 189, 248, 0.16)" : "rgba(37, 99, 235, 0.08)",
+    infoSoft: darkMode ? "rgba(59, 130, 246, 0.16)" : "rgba(59, 130, 246, 0.1)",
+    successSoft: darkMode ? "rgba(22, 163, 74, 0.16)" : "rgba(22, 163, 74, 0.1)",
+    dangerSoft: darkMode ? "rgba(220, 38, 38, 0.16)" : "rgba(220, 38, 38, 0.1)",
+    success: "#16a34a",
+    danger: "#dc2626",
+  } as const;
+
+  const panelStyle: CSSProperties = {
+    borderColor: theme.panelBorder,
+    backgroundColor: theme.panel,
+    backdropFilter: "blur(18px)",
+    boxShadow: darkMode ? "0 24px 60px rgba(2, 8, 23, 0.34)" : "0 24px 60px rgba(15, 23, 42, 0.08)"
+  };
+
+  const surfaceStyle: CSSProperties = {
+    borderColor: theme.panelBorder,
+    backgroundColor: theme.surface
+  };
+
+  const mutedSurfaceStyle: CSSProperties = {
+    borderColor: theme.panelBorder,
+    backgroundColor: theme.surfaceAlt
+  };
+
+  const inputStyle: CSSProperties = {
+    borderColor: theme.panelBorder,
+    backgroundColor: theme.input,
+    color: theme.text
+  };
+
+  const primaryButtonStyle: CSSProperties = {
+    background: `linear-gradient(135deg, ${theme.accentStrong}, ${brandPrimary})`,
+    color: "#ffffff"
+  };
+
+  const secondaryButtonStyle: CSSProperties = {
+    borderColor: theme.panelBorder,
+    backgroundColor: theme.surface,
+    color: theme.textSubtle
+  };
+
+  const dashboardStats = [
+    { label: "Total Patients", value: String(doctorPatients.length), icon: Users, detail: "Active clinical records" },
+    { label: "Appointments", value: String(doctorAppointments.length), icon: CalendarClock, detail: "Booked consultations" },
+    { label: "Reminder Ready", value: String(clinicAnalytics.remindersConfigured), icon: ClipboardPenLine, detail: "Follow-ups prepared" },
+    { label: "Teleconsults", value: String(clinicAnalytics.teleconsultations), icon: Pill, detail: "Virtual consultations" }
+  ];
+
+  const sectionNavItems = [
+    { label: "Overview", icon: Stethoscope, section: "overview" as const },
+    { label: "Patient Records", icon: Users, section: "patient-records" as const },
+    { label: "Appointments", icon: CalendarClock, section: "appointments" as const },
+    { label: "Observations", icon: ClipboardPenLine, section: "observations" as const }
+  ];
 
   useEffect(() => {
     api.get(`/public/doctor/${id}`).then(({ data }) => {
@@ -643,14 +885,27 @@ export function DoctorClinicDashboardPage() {
   }, [doctorPatients]);
 
   useEffect(() => {
-    if (!selectedPatientId && filteredDoctorPatients.length > 0) {
-      setSelectedPatientId(filteredDoctorPatients[0].id);
-      return;
+    setPatientMessageDrafts((previous) => {
+      const next = { ...previous };
+      for (const patient of doctorPatients) {
+        const supportDraft = patientSupportDrafts[patient.id] || buildPatientSupportDraft(patient);
+        if (!next[patient.id]) {
+          next[patient.id] = buildMessageDraft(patient, supportDraft, patient.inventory?.follow_up_notes || "");
+        }
+      }
+      return next;
+    });
+  }, [doctorPatients, patientSupportDrafts]);
+
+  useEffect(() => {
+    if (selectedPatientId && !doctorPatients.some((patient) => patient.id === selectedPatientId)) {
+      setSelectedPatientId(null);
     }
-    if (selectedPatientId && !filteredDoctorPatients.some((patient) => patient.id === selectedPatientId)) {
-      setSelectedPatientId(filteredDoctorPatients[0]?.id ?? null);
-    }
-  }, [filteredDoctorPatients, selectedPatientId]);
+  }, [doctorPatients, selectedPatientId]);
+
+  useEffect(() => {
+    setSelectedPatientStep("personal");
+  }, [selectedPatientId]);
 
   useEffect(() => {
     if (!showPatientPicker) {
@@ -791,6 +1046,16 @@ export function DoctorClinicDashboardPage() {
     }));
   }
 
+  function updatePatientMessageDraft(patientId: number, field: keyof PatientMessageDraft, value: string) {
+    setPatientMessageDrafts((previous) => ({
+      ...previous,
+      [patientId]: {
+        ...(previous[patientId] || { subject: "", body: "", channel: "whatsapp" }),
+        [field]: value,
+      },
+    }));
+  }
+
   async function resolveNewPatientPincode(pin: string) {
     const normalized = pin.trim();
     updateNewPatientDraft("pincode", normalized);
@@ -899,9 +1164,21 @@ export function DoctorClinicDashboardPage() {
         [createdPatient.id]: createEmptyPatientSupportDraft(),
       }));
       setNewPatientDraft(createEmptyNewPatientDraft());
+      setNewPatientStep("personal");
+      setNewPatientPincodeStatus("");
+      setPatientSearchInput(createdPatient.full_name);
+      setPatientSearchQuery(createdPatient.full_name);
+      setSelectedPatientId(createdPatient.id);
       setNewPatientStatus("Patient inventory created.");
     } catch (error: any) {
-      setNewPatientStatus(String(error?.response?.data?.detail ?? "Unable to create patient inventory."));
+      let msg = "Unable to create patient inventory.";
+      const detail = error?.response?.data?.detail;
+      if (typeof detail === "string") {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        msg = detail.map((e: any) => e.msg || JSON.stringify(e)).join(", ");
+      }
+      setNewPatientStatus(msg);
     }
   }
 
@@ -945,9 +1222,16 @@ export function DoctorClinicDashboardPage() {
       );
       setInventoryStatus((previous) => ({ ...previous, [patientId]: "Inventory saved." }));
     } catch (error: any) {
+      let msg = "Unable to save inventory.";
+      const detail = error?.response?.data?.detail;
+      if (typeof detail === "string") {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        msg = detail.map((e: any) => e.msg || JSON.stringify(e)).join(", ");
+      }
       setInventoryStatus((previous) => ({
         ...previous,
-        [patientId]: String(error?.response?.data?.detail ?? "Unable to save inventory."),
+        [patientId]: msg,
       }));
     }
   }
@@ -1037,12 +1321,38 @@ export function DoctorClinicDashboardPage() {
 
   function openReminder(patient: DoctorPatientRecord, channel: "whatsapp" | "sms") {
     const draft = patientSupportDrafts[patient.id] || createEmptyPatientSupportDraft();
-    const message = encodeURIComponent(buildReminderMessage(patient, draft, inventoryDrafts[patient.id]?.followUpNotes || ""));
+    const composedMessage = patientMessageDrafts[patient.id]?.body || buildReminderMessage(patient, draft, inventoryDrafts[patient.id]?.followUpNotes || "");
+    const message = encodeURIComponent(composedMessage);
     const phone = (patient.phone || "").replace(/[^\d+]/g, "");
     const url = channel === "whatsapp"
       ? `https://wa.me/${phone.replace(/^\+/, "")}?text=${message}`
       : `sms:${phone}?&body=${message}`;
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function copyPatientMessage(patientId: number) {
+    const body = patientMessageDrafts[patientId]?.body;
+    if (!body) {
+      setMessageStatus((previous) => ({ ...previous, [patientId]: "Write a message first." }));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(body);
+      setMessageStatus((previous) => ({ ...previous, [patientId]: "Message copied." }));
+    } catch {
+      setMessageStatus((previous) => ({ ...previous, [patientId]: "Copy failed. Please try again." }));
+    }
+  }
+
+  function sendPatientMessage(patient: DoctorPatientRecord) {
+    const draft = patientMessageDrafts[patient.id];
+    const channel = draft?.channel || "whatsapp";
+    if (!draft?.body.trim()) {
+      setMessageStatus((previous) => ({ ...previous, [patient.id]: "Message body is empty." }));
+      return;
+    }
+    openReminder(patient, channel);
+    setMessageStatus((previous) => ({ ...previous, [patient.id]: `Opened ${channel === "whatsapp" ? "WhatsApp" : "SMS"} composer.` }));
   }
 
   function printPrescriptionPdf(patient: DoctorPatientRecord) {
@@ -1067,7 +1377,8 @@ export function DoctorClinicDashboardPage() {
           <h3>Apathya</h3>
           <p>${inventory?.apathya || "-"}</p>
         </div>
-      `
+      `,
+      logo
     );
   }
 
@@ -1090,7 +1401,8 @@ export function DoctorClinicDashboardPage() {
           <h3>Notes</h3>
           <p>${draft.paymentNotes || "-"}</p>
         </div>
-      `
+      `,
+      logo
     );
   }
 
@@ -1209,6 +1521,1615 @@ export function DoctorClinicDashboardPage() {
     );
   }
 
+  function moveStep(current: IntakeStepKey, direction: -1 | 1, setter: (step: IntakeStepKey) => void) {
+    const currentIndex = INTAKE_STEPS.findIndex((step) => step.key === current);
+    const nextStep = INTAKE_STEPS[currentIndex + direction];
+    if (nextStep) {
+      setter(nextStep.key);
+    }
+  }
+
+  function renderField(label: string, child: ReactNode, hint?: string, className = "") {
+    return (
+      <label className={`flex flex-col gap-2 ${className}`.trim()}>
+        <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+          {label}
+        </span>
+        {child}
+        {hint ? (
+          <span className="text-xs leading-5" style={{ color: theme.textMuted }}>
+            {hint}
+          </span>
+        ) : null}
+      </label>
+    );
+  }
+
+  function renderVoiceTextArea({
+    label,
+    value,
+    onChange,
+    placeholder,
+    className = "",
+    minHeight = 132,
+    hint,
+  }: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    placeholder: string;
+    className?: string;
+    minHeight?: number;
+    hint?: string;
+  }) {
+    return renderField(
+      label,
+      <div className="relative">
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className={`w-full rounded-2xl border px-4 py-3 pr-12 text-sm leading-6 ${className}`.trim()}
+          style={{ ...inputStyle, minHeight }}
+          placeholder={placeholder}
+        />
+        <span
+          className="absolute right-3 top-3 rounded-full border px-2 py-1 text-xs"
+          style={{ borderColor: theme.panelBorder, backgroundColor: theme.surfaceAlt, color: theme.textMuted }}
+          title="Voice-to-text ready"
+        >
+          🎙️
+        </span>
+      </div>,
+      hint
+    );
+  }
+
+  function renderStepperTabs(activeStep: IntakeStepKey, setStep: (step: IntakeStepKey) => void) {
+    return (
+      <div className="grid gap-2 md:grid-cols-4">
+        {INTAKE_STEPS.map((step, index) => {
+          const isActive = activeStep === step.key;
+          return (
+            <button
+              key={step.key}
+              type="button"
+              onClick={() => setStep(step.key)}
+              className="rounded-[22px] border px-4 py-3 text-left transition"
+              style={{
+                borderColor: isActive ? theme.accentStrong : theme.panelBorder,
+                backgroundColor: isActive ? theme.accentSoft : theme.surfaceAlt,
+                color: theme.text,
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold"
+                  style={{
+                    backgroundColor: isActive ? theme.accentStrong : theme.surface,
+                    color: isActive ? "#ffffff" : theme.textMuted,
+                  }}
+                >
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{step.label}</p>
+                  <p className="truncate text-xs" style={{ color: isActive ? theme.textSubtle : theme.textMuted }}>
+                    {step.description}
+                  </p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderNewPatientStepContent() {
+    if (newPatientStep === "personal") {
+      return (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {renderField("Patient Name", <input value={newPatientDraft.fullName} onChange={(event) => updateNewPatientDraft("fullName", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Full name" required />)}
+          {renderField("Phone", <input value={newPatientDraft.phone} onChange={(event) => updateNewPatientDraft("phone", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Phone number" />)}
+          {renderField("Age", <input value={newPatientDraft.age} onChange={(event) => updateNewPatientDraft("age", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Age" inputMode="numeric" />)}
+          {renderField("Email", <input value={newPatientDraft.email} onChange={(event) => updateNewPatientDraft("email", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Email address" />)}
+          {renderField("Gender", <input value={newPatientDraft.gender} onChange={(event) => updateNewPatientDraft("gender", event.target.value)} list="gender-options" className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Search gender" />)}
+          {renderField("Religion", <input value={newPatientDraft.religion} onChange={(event) => updateNewPatientDraft("religion", event.target.value)} list="religion-options" className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Search religion" />)}
+          {renderField("Date of Birth", <input value={newPatientDraft.dateOfBirth} onChange={(event) => updateNewPatientDraft("dateOfBirth", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} type="date" />)}
+          {renderField("Preferred Language", <input value={newPatientDraft.preferredLanguage} onChange={(event) => updateNewPatientDraft("preferredLanguage", event.target.value)} list="language-options" className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Search language" />)}
+          {renderField("Address", <input value={newPatientDraft.localAddress} onChange={(event) => updateNewPatientDraft("localAddress", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Street / locality" />, undefined, "md:col-span-2 xl:col-span-4")}
+          <div className="grid gap-4 md:col-span-2 xl:col-span-4 md:grid-cols-3">
+            {renderField("City", <input value={newPatientDraft.city} onChange={(event) => updateNewPatientDraft("city", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="City" />)}
+            {renderField("State", <input value={newPatientDraft.state} onChange={(event) => updateNewPatientDraft("state", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="State" />)}
+            {renderField("Pincode", <input value={newPatientDraft.pincode} onChange={(event) => void resolveNewPatientPincode(event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Pincode" />)}
+          </div>
+          {newPatientPincodeStatus ? (
+            <p className="text-xs font-semibold md:col-span-2 xl:col-span-4" style={{ color: "#c2410c" }}>
+              {newPatientPincodeStatus}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (newPatientStep === "symptoms") {
+      return (
+        <div className="grid gap-4 md:grid-cols-2">
+          {renderVoiceTextArea({
+            label: "Presenting Complaints",
+            value: newPatientDraft.presentingComplaints,
+            onChange: (value) => updateNewPatientDraft("presentingComplaints", value),
+            placeholder: "Record chief complaint and symptom narrative",
+          })}
+          {renderField(
+            "ICD-10 Search",
+            <input
+              value={newPatientDraft.diagnosis}
+              onChange={(event) => updateNewPatientDraft("diagnosis", event.target.value)}
+              list="icd10-options"
+              className="rounded-2xl border px-4 py-3 text-sm"
+              style={inputStyle}
+              placeholder="Search standardized diagnosis"
+            />,
+            "Auto-suggests standardized diagnosis labels."
+          )}
+          {renderField("Investigations", <textarea value={newPatientDraft.investigation} onChange={(event) => updateNewPatientDraft("investigation", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Investigations ordered or reviewed" />)}
+          {renderField("Findings / Vitals Summary", <textarea value={newPatientDraft.finding} onChange={(event) => updateNewPatientDraft("finding", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Clinical findings or initial vital summary" />)}
+        </div>
+      );
+    }
+
+    if (newPatientStep === "treatment") {
+      return (
+        <div className="grid gap-4 md:grid-cols-2">
+          {renderField("Investigation Date", <input value={newPatientDraft.investigationDate} onChange={(event) => updateNewPatientDraft("investigationDate", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} type="date" />)}
+          {renderField("Finding Date", <input value={newPatientDraft.findingDate} onChange={(event) => updateNewPatientDraft("findingDate", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} type="date" />)}
+          {renderField("Prescription", <textarea value={newPatientDraft.prescription} onChange={(event) => updateNewPatientDraft("prescription", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Medicines and treatment plan" />)}
+          {renderVoiceTextArea({
+            label: "Clinical Notes",
+            value: newPatientDraft.specialInstruction,
+            onChange: (value) => updateNewPatientDraft("specialInstruction", value),
+            placeholder: "Notes, precautions, and care instructions",
+          })}
+          {renderField("Diet Plan", <textarea value={newPatientDraft.dietPlan} onChange={(event) => updateNewPatientDraft("dietPlan", event.target.value)} className="min-h-[118px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Diet or ahar advice" />)}
+          {renderField("Follow-up Notes", <textarea value={newPatientDraft.followUpNotes} onChange={(event) => updateNewPatientDraft("followUpNotes", event.target.value)} className="min-h-[118px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Follow-up timing and revisit plan" />)}
+          {renderField("Pathya", <textarea value={newPatientDraft.pathya} onChange={(event) => updateNewPatientDraft("pathya", event.target.value)} className="min-h-[112px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Recommended regimen" />)}
+          {renderField("Apathya", <textarea value={newPatientDraft.apathya} onChange={(event) => updateNewPatientDraft("apathya", event.target.value)} className="min-h-[112px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Avoid / contraindications" />)}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {renderField("Family History", <textarea value={newPatientDraft.familyHistory} onChange={(event) => updateNewPatientDraft("familyHistory", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Family history notes" />)}
+        {renderField("Past Medical History", <textarea value={newPatientDraft.pastMedicationHistory} onChange={(event) => updateNewPatientDraft("pastMedicationHistory", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Past medical and medication history" />)}
+        {renderVoiceTextArea({
+          label: "Surgical History",
+          value: newPatientDraft.surgicalHistory,
+          onChange: (value) => updateNewPatientDraft("surgicalHistory", value),
+          placeholder: "Past surgeries, procedures, and recovery notes",
+        })}
+        {renderField("Lab Reports", <textarea value={newPatientDraft.labReports} onChange={(event) => updateNewPatientDraft("labReports", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="One lab report per line" />)}
+        {renderField("Document Vault", <textarea value={newPatientDraft.documentVault} onChange={(event) => updateNewPatientDraft("documentVault", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Shared files or supporting documents" />, undefined, "md:col-span-2")}
+      </div>
+    );
+  }
+
+  function renderSelectedPatientStepContent() {
+    if (!selectedPatient) {
+      return null;
+    }
+
+    const draft = inventoryDrafts[selectedPatient.id] || createEmptyInventoryDraft();
+    if (selectedPatientStep === "personal") {
+      return (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {renderField("Patient Name", <input value={selectedPatient.full_name} readOnly className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} />)}
+          {renderField("Phone", <input value={selectedPatient.phone || "-"} readOnly className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} />)}
+          {renderField("Age", <input value={calculateAge(selectedPatient.date_of_birth)} readOnly className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} />)}
+          {renderField("Gender", <input value={selectedPatient.gender || "Not recorded"} readOnly className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} />)}
+          {renderField("Religion", <input value={draft.religion} onChange={(event) => updateInventoryDraft(selectedPatient.id, "religion", event.target.value)} list="religion-options" className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Search religion" />)}
+          {renderField("Preferred Language", <input value={draft.preferredLanguage} onChange={(event) => updateInventoryDraft(selectedPatient.id, "preferredLanguage", event.target.value)} list="language-options" className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Search language" />)}
+          {renderField("Address", <input value={selectedPatient.local_address || selectedPatient.address || "Not recorded"} readOnly className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} />, "Demographics are currently read-only from this workspace.", "md:col-span-2 xl:col-span-4")}
+        </div>
+      );
+    }
+
+    if (selectedPatientStep === "symptoms") {
+      return (
+        <div className="grid gap-4 md:grid-cols-2">
+          {renderVoiceTextArea({
+            label: "Presenting Complaints",
+            value: draft.presentingComplaints,
+            onChange: (value) => updateInventoryDraft(selectedPatient.id, "presentingComplaints", value),
+            placeholder: "Current complaint narrative",
+          })}
+          {renderField(
+            "ICD-10 Search",
+            <input
+              value={draft.diagnosis}
+              onChange={(event) => updateInventoryDraft(selectedPatient.id, "diagnosis", event.target.value)}
+              list="icd10-options"
+              className="rounded-2xl border px-4 py-3 text-sm"
+              style={inputStyle}
+              placeholder="Search standardized diagnosis"
+            />,
+            "Use a coded diagnosis for cleaner downstream documentation."
+          )}
+          {renderField("Investigations", <textarea value={draft.investigation} onChange={(event) => updateInventoryDraft(selectedPatient.id, "investigation", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Investigations and tests" />)}
+          {renderField("Vitals / Findings", <textarea value={draft.finding} onChange={(event) => updateInventoryDraft(selectedPatient.id, "finding", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Vitals and notable findings" />)}
+        </div>
+      );
+    }
+
+    if (selectedPatientStep === "treatment") {
+      return (
+        <div className="grid gap-4 md:grid-cols-2">
+          {renderField("Investigation Date", <input value={draft.investigationDate} onChange={(event) => updateInventoryDraft(selectedPatient.id, "investigationDate", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} type="date" />)}
+          {renderField("Finding Date", <input value={draft.findingDate} onChange={(event) => updateInventoryDraft(selectedPatient.id, "findingDate", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} type="date" />)}
+          {renderField("Prescription", <textarea value={draft.prescription} onChange={(event) => updateInventoryDraft(selectedPatient.id, "prescription", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Prescription and regimen" />)}
+          {renderVoiceTextArea({
+            label: "Clinical Notes",
+            value: draft.specialInstruction,
+            onChange: (value) => {
+              updateInventoryDraft(selectedPatient.id, "specialInstruction", value);
+              setDoctorObservations(value);
+            },
+            placeholder: "Clinical notes and cautions",
+          })}
+          {renderField("Diet Plan", <textarea value={draft.dietPlan} onChange={(event) => updateInventoryDraft(selectedPatient.id, "dietPlan", event.target.value)} className="min-h-[118px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Diet plan / ahar advice" />)}
+          {renderField("Follow-up Notes", <textarea value={draft.followUpNotes} onChange={(event) => updateInventoryDraft(selectedPatient.id, "followUpNotes", event.target.value)} className="min-h-[118px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Follow-up plan and revisit notes" />)}
+          {renderField("Pathya", <textarea value={draft.pathya} onChange={(event) => updateInventoryDraft(selectedPatient.id, "pathya", event.target.value)} className="min-h-[112px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Recommended" />)}
+          {renderField("Apathya", <textarea value={draft.apathya} onChange={(event) => updateInventoryDraft(selectedPatient.id, "apathya", event.target.value)} className="min-h-[112px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Avoid" />)}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {renderField("Family History", <textarea value={draft.familyHistory} onChange={(event) => updateInventoryDraft(selectedPatient.id, "familyHistory", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Family history notes" />)}
+        {renderField("Past Medical History", <textarea value={draft.pastMedicationHistory} onChange={(event) => updateInventoryDraft(selectedPatient.id, "pastMedicationHistory", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Past medical and medication history" />)}
+        {renderVoiceTextArea({
+          label: "Surgical History",
+          value: draft.surgicalHistory,
+          onChange: (value) => updateInventoryDraft(selectedPatient.id, "surgicalHistory", value),
+          placeholder: "Surgical and procedure history",
+        })}
+        {renderField("Lab Reports", <textarea value={draft.labReports} onChange={(event) => updateInventoryDraft(selectedPatient.id, "labReports", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="One lab report per line" />)}
+        {renderField("Document Vault", <textarea value={draft.documentVault} onChange={(event) => updateInventoryDraft(selectedPatient.id, "documentVault", event.target.value)} className="min-h-[132px] rounded-2xl border px-4 py-3 text-sm leading-6" style={inputStyle} placeholder="Shared files and documents" />, undefined, "md:col-span-2")}
+      </div>
+    );
+  }
+
+  function openPatientWorkspace(patientId: number, section: DashboardSection, step?: IntakeStepKey) {
+    setSelectedPatientId(patientId);
+    if (step) {
+      setSelectedPatientStep(step);
+    }
+    window.setTimeout(() => scrollToSection(section), 40);
+  }
+
+  const selectedPatientAllergySummary = selectedPatient ? deriveAllergySummary(selectedPatient) : "Not recorded";
+  const selectedPatientBloodType = selectedPatient ? deriveBloodType(selectedPatient) : "Pending";
+  const latestSelectedAppointment = selectedPatient?.appointment_history?.[0];
+
+  function renderRedesignedDashboard() {
+    return (
+      <PageFade className="min-h-screen pb-10" style={{ background: theme.pageBackground }}>
+        <header
+          className="sticky top-0 z-40 border-b backdrop-blur-xl"
+          style={{ borderColor: theme.shellBorder, backgroundColor: theme.shell }}
+        >
+          <div className="mx-auto grid max-w-[1800px] gap-4 px-4 py-4 sm:px-6 xl:grid-cols-[auto_minmax(340px,1fr)_auto] xl:items-center xl:px-8 2xl:px-10">
+            <div className="flex min-w-0 items-center gap-4">
+              <div
+                className="flex h-12 w-12 items-center justify-center rounded-2xl border"
+                style={{
+                  borderColor: theme.shellBorder,
+                  background: `linear-gradient(135deg, ${theme.accentSoft}, rgba(255,255,255,0.06))`,
+                }}
+              >
+                {logo ? <img src={logo} alt={doctorName} className="h-10 w-10 rounded-xl object-cover" /> : <Leaf className="h-5 w-5" style={{ color: theme.accent }} />}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-display text-xl font-extrabold tracking-tight" style={{ color: theme.text }}>
+                  {doctorName}
+                </p>
+                <p className="text-sm" style={{ color: theme.textMuted }}>
+                  {selectedPatient ? "Active Patient Workspace" : "Clinical Dashboard"}
+                </p>
+              </div>
+            </div>
+
+            <div ref={patientSearchRef} className="flex w-full gap-3">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: theme.textMuted }} />
+                <input
+                  ref={patientSearchInputRef}
+                  value={patientSearchInput}
+                  onChange={(event) => {
+                    setPatientSearchInput(event.target.value);
+                    setShowPatientPicker(true);
+                  }}
+                  onFocus={() => setShowPatientPicker(true)}
+                  className="w-full rounded-2xl border py-3 pl-10 pr-4 text-sm"
+                  style={inputStyle}
+                  placeholder="Find patient by name, ID, phone, or address"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPatientSearchQuery(patientSearchInput);
+                  setShowPatientPicker(true);
+                }}
+                className="rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg"
+                style={primaryButtonStyle}
+              >
+                Search
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <Link to={`/clinic/${id}`} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                Back to Website
+              </Link>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setProfileMenuOpen((value) => !value)}
+                  className="rounded-2xl border p-2.5"
+                  style={secondaryButtonStyle}
+                  aria-label="Open profile menu"
+                >
+                  <UserRound className="h-5 w-5" />
+                </button>
+                {profileMenuOpen ? (
+                  <div className="absolute right-0 mt-2 w-[min(16rem,calc(100vw-2rem))] rounded-3xl border p-4 shadow-2xl" style={panelStyle}>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+                      Signed in as
+                    </p>
+                    <p className="mt-2 text-sm font-bold capitalize" style={{ color: theme.text }}>
+                      {isAdmin ? "admin" : "doctor"}
+                    </p>
+                    <InteractiveLogoutButton
+                      onClick={signOut}
+                      className="mt-3 w-full"
+                      style={{
+                        "--logout-bg": darkMode ? "#173243" : "#eff6ff",
+                        "--logout-text": darkMode ? "#eaf5f9" : "#163b35",
+                        "--logout-door": darkMode ? "#63b8d8" : "#2563eb",
+                        "--logout-figure": darkMode ? "#d9c07a" : "#2563eb",
+                        "--logout-shadow": darkMode ? "rgba(8, 20, 30, 0.42)" : "rgba(47, 121, 189, 0.18)",
+                      } as CSSProperties}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-[1800px] px-4 py-6 sm:px-6 xl:px-8 2xl:px-10">
+          <div className="grid gap-6 xl:grid-cols-[minmax(220px,15%)_minmax(0,1fr)_minmax(320px,25%)] xl:items-start">
+            <aside className="space-y-5 xl:sticky xl:top-24">
+              <div className="rounded-[30px] border p-5" style={panelStyle}>
+                <div
+                  className="rounded-[26px] border p-5"
+                  style={{
+                    ...mutedSurfaceStyle,
+                    background: darkMode
+                      ? `linear-gradient(160deg, rgba(56, 189, 248, 0.14), rgba(10, 25, 38, 0.96) 62%)`
+                      : `linear-gradient(160deg, rgba(37, 99, 235, 0.1), rgba(255, 255, 255, 0.98) 60%)`,
+                  }}
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.accentStrong }}>
+                    Clinical Workspace
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold tracking-tight" style={{ color: theme.text }}>
+                    {selectedPatient ? "Chart Open" : "Dashboard Ready"}
+                  </p>
+                  <p className="mt-2 text-sm leading-6" style={{ color: theme.textMuted }}>
+                    {selectedPatient
+                      ? `Working in ${selectedPatient.full_name}'s active workspace.`
+                      : "Select a patient to open the persistent snapshot and focused charting workspace."}
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {sectionNavItems.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => scrollToSection(item.section)}
+                      className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition"
+                      style={{
+                        borderColor: activeSection === item.section ? theme.accentStrong : theme.panelBorder,
+                        backgroundColor: activeSection === item.section ? theme.accentSoft : theme.surface,
+                        color: theme.text,
+                      }}
+                    >
+                      <item.icon className="h-4 w-4" style={{ color: theme.accent }} />
+                      <span className="text-sm font-semibold">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-[24px] border p-4" style={surfaceStyle}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: theme.text }}>
+                        Dark Mode
+                      </p>
+                      <p className="mt-1 text-xs leading-5" style={{ color: theme.textMuted }}>
+                        Reduce glare for longer charting sessions.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDarkMode((value) => !value)}
+                      className="relative h-7 w-14 rounded-full border transition"
+                      style={{ borderColor: theme.panelBorder, backgroundColor: darkMode ? theme.accentStrong : theme.surfaceAlt }}
+                      aria-label="Toggle dark mode"
+                    >
+                      <span
+                        className="absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition"
+                        style={{ left: darkMode ? "calc(100% - 1.5rem)" : "0.25rem" }}
+                      />
+                    </button>
+                  </div>
+                  {selectedPatient ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPatientId(null);
+                        setPatientSearchInput("");
+                        setPatientSearchQuery("");
+                      }}
+                      className="mt-4 w-full rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                      style={secondaryButtonStyle}
+                    >
+                      Return to Main Dashboard
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="rounded-[30px] border p-5" style={panelStyle}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-semibold" style={{ color: theme.text }}>
+                      Today&apos;s Schedule
+                    </p>
+                    <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                      Compact patient flow with live status badges.
+                    </p>
+                  </div>
+                  <CalendarClock className="h-5 w-5" style={{ color: theme.accent }} />
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {sidebarAppointments.length === 0 ? (
+                    <div className="rounded-2xl border px-4 py-4 text-sm" style={mutedSurfaceStyle}>
+                      <span style={{ color: theme.textMuted }}>No appointments scheduled for today.</span>
+                    </div>
+                  ) : (
+                    sidebarAppointments.map((appointment) => {
+                      const tone = getAppointmentTone(appointment);
+                      const badgeLabel = tone === "completed" ? "Completed" : tone === "late" ? "Late" : "Upcoming";
+                      const badgeStyle =
+                        tone === "completed"
+                          ? { backgroundColor: theme.successSoft, color: theme.success }
+                          : tone === "late"
+                            ? { backgroundColor: theme.dangerSoft, color: theme.danger }
+                            : { backgroundColor: theme.infoSoft, color: theme.accentStrong };
+
+                      return (
+                        <button
+                          key={appointment.id}
+                          type="button"
+                          onClick={() => setSelectedPatientId(appointment.patient_id)}
+                          className="w-full rounded-2xl border px-4 py-3 text-left"
+                          style={mutedSurfaceStyle}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold" style={{ color: theme.text }}>
+                                {appointment.patient_name}
+                              </p>
+                              <p className="mt-1 text-xs" style={{ color: theme.textMuted }}>
+                                {new Date(appointment.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                            </div>
+                            <span className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]" style={badgeStyle}>
+                              {badgeLabel}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {todaysAppointments.length > 6 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllSidebarAppointments((value) => !value)}
+                    className="mt-4 w-full rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                    style={secondaryButtonStyle}
+                  >
+                    {showAllSidebarAppointments ? "Show less" : `Show ${todaysAppointments.length - 6} more`}
+                  </button>
+                ) : null}
+              </div>
+            </aside>
+
+            <div className="min-w-0 space-y-6">
+              {!selectedPatient ? (
+                <>
+                  <section
+                    ref={(node) => {
+                      sectionRefs.current.overview = node;
+                    }}
+                    className="rounded-[32px] border p-6 sm:p-8"
+                    style={panelStyle}
+                  >
+                    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.accentStrong }}>
+                        Overview
+                      </p>
+                      <MotionText
+                        as="h2"
+                        text="A faster three-pane dashboard built for clinical scanning"
+                        className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl"
+                      />
+                      <p className="mt-4 max-w-3xl text-sm leading-7" style={{ color: theme.textMuted }}>
+                        The workspace now keeps navigation, schedule, directory, and patient context visible at once so clinicians spend less time hunting through long vertical cards.
+                      </p>
+                    </motion.div>
+
+                    <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {dashboardStats.map((stat) => (
+                        <div key={stat.label} className="rounded-[24px] border p-4" style={surfaceStyle}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                                {stat.label}
+                              </p>
+                              <p className="mt-2 text-2xl font-semibold tracking-tight" style={{ color: theme.text }}>
+                                {stat.value}
+                              </p>
+                            </div>
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ backgroundColor: theme.accentSoft }}>
+                              <stat.icon className="h-4 w-4" style={{ color: theme.accentStrong }} />
+                            </div>
+                          </div>
+                          <p className="mt-3 text-xs leading-5" style={{ color: theme.textMuted }}>
+                            {stat.detail}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-5 rounded-[26px] border p-4" style={surfaceStyle}>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminInsights((value) => !value)}
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: theme.text }}>
+                            Administrative Insights
+                          </p>
+                          <p className="mt-1 text-xs leading-5" style={{ color: theme.textMuted }}>
+                            Revenue and language distribution stay available without competing with clinical metrics.
+                          </p>
+                        </div>
+                        <span className="rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em]" style={secondaryButtonStyle}>
+                          {showAdminInsights ? "Hide" : "Show"}
+                        </span>
+                      </button>
+                      {showAdminInsights ? (
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-2xl border p-4" style={mutedSurfaceStyle}>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                              Revenue
+                            </p>
+                            <p className="mt-2 text-xl font-semibold" style={{ color: theme.text }}>
+                              Rs {clinicAnalytics.totalRevenue.toFixed(0)}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border p-4" style={mutedSurfaceStyle}>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                              Top Language
+                            </p>
+                            <p className="mt-2 text-xl font-semibold" style={{ color: theme.text }}>
+                              {clinicAnalytics.topLanguage}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section
+                    ref={(node) => {
+                      sectionRefs.current["patient-records"] = node;
+                    }}
+                    className="rounded-[32px] border p-6"
+                    style={panelStyle}
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                          Patient Directory
+                        </p>
+                        <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                          Bolder patient hierarchy, tighter rows, and quick chart actions built for clinic speed.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border px-4 py-3 text-sm" style={mutedSurfaceStyle}>
+                        <p className="font-semibold" style={{ color: theme.text }}>
+                          {filteredDoctorPatients.length} visible patient{filteredDoctorPatients.length === 1 ? "" : "s"}
+                        </p>
+                        <p className="mt-1" style={{ color: theme.textMuted }}>
+                          {patientSearchQuery.trim() ? `Filtered by "${patientSearchQuery}"` : "Showing full directory"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 overflow-hidden rounded-[26px] border" style={surfaceStyle}>
+                      <div className="hidden grid-cols-[1.45fr_0.75fr_1fr_0.95fr_0.95fr] gap-4 border-b px-5 py-3 text-[11px] font-bold uppercase tracking-[0.16em] md:grid" style={{ borderColor: theme.panelBorder, color: theme.textMuted }}>
+                        <span>Patient</span>
+                        <span>ID</span>
+                        <span>Contact</span>
+                        <span>Last Visit</span>
+                        <span>Actions</span>
+                      </div>
+                      <div className="divide-y" style={{ borderColor: theme.panelBorder }}>
+                        {visiblePatientDirectory.length === 0 ? (
+                          <div className="px-5 py-8 text-sm" style={{ color: theme.textMuted }}>
+                            No patient records found.
+                          </div>
+                        ) : (
+                          visiblePatientDirectory.map((patient, index) => (
+                            <div
+                              key={patient.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setSelectedPatientId(patient.id)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  setSelectedPatientId(patient.id);
+                                }
+                              }}
+                              className="grid gap-4 px-5 py-4 transition md:grid-cols-[1.45fr_0.75fr_1fr_0.95fr_0.95fr]"
+                              style={{
+                                backgroundColor: selectedPatientId === patient.id ? theme.accentSoft : index % 2 === 0 ? theme.surface : theme.surfaceAlt,
+                                boxShadow: selectedPatientId === patient.id ? `inset 3px 0 0 ${theme.accentStrong}` : "none",
+                              }}
+                            >
+                              <div>
+                                <p className="text-base font-bold tracking-tight" style={{ color: theme.text }}>
+                                  {patient.full_name}
+                                </p>
+                                <p className="mt-1 text-xs md:hidden" style={{ color: theme.textMuted }}>
+                                  Patient #{patient.id}
+                                </p>
+                              </div>
+                              <div className="hidden text-sm font-semibold md:block" style={{ color: theme.textSubtle }}>
+                                #{patient.id}
+                              </div>
+                              <div className="text-sm" style={{ color: theme.textSubtle }}>
+                                {patient.phone || patient.email || "-"}
+                              </div>
+                              <div className="text-sm" style={{ color: theme.textSubtle }}>
+                                {patient.appointment_history?.[0]?.time
+                                  ? new Date(patient.appointment_history[0].time).toLocaleDateString()
+                                  : patient.appointment_history?.[0]?.created_at
+                                    ? new Date(patient.appointment_history[0].created_at).toLocaleDateString()
+                                    : "New"}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setSelectedPatientId(patient.id);
+                                    printPrescriptionPdf(patient);
+                                  }}
+                                  className="rounded-xl border px-2.5 py-2 text-sm"
+                                  style={secondaryButtonStyle}
+                                  title="View Last Rx"
+                                >
+                                  📄
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openPatientWorkspace(patient.id, "observations", "treatment");
+                                  }}
+                                  className="rounded-xl border px-2.5 py-2 text-sm"
+                                  style={secondaryButtonStyle}
+                                  title="New Observation"
+                                >
+                                  ➕
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openPatientWorkspace(patient.id, "appointments", "treatment");
+                                  }}
+                                  className="rounded-xl border px-2.5 py-2 text-sm"
+                                  style={secondaryButtonStyle}
+                                  title="Reschedule Visit"
+                                >
+                                  🗓️
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {filteredDoctorPatients.length > 6 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPatientDirectory((value) => !value)}
+                        className="mt-4 rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                        style={secondaryButtonStyle}
+                      >
+                        {showAllPatientDirectory ? "Show fewer patients" : `Show ${filteredDoctorPatients.length - 6} more patients`}
+                      </button>
+                    ) : null}
+                  </section>
+
+                  <section
+                    ref={(node) => {
+                      sectionRefs.current.appointments = node;
+                    }}
+                    className="rounded-[32px] border p-6"
+                    style={panelStyle}
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                          Appointments
+                        </p>
+                        <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                          Color-coded urgency badges keep late visits visible while completed and upcoming slots stay lightweight.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { key: "pending", label: "Pending" },
+                          { key: "approved", label: "Approved" },
+                          { key: "rejected", label: "Rejected" },
+                          { key: "all", label: "All" },
+                        ].map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setAppointmentFilter(item.key as "all" | "pending" | "approved" | "rejected")}
+                            className="rounded-full px-3.5 py-2 text-xs font-semibold"
+                            style={appointmentFilter === item.key ? { backgroundColor: theme.accentStrong, color: "#ffffff" } : secondaryButtonStyle}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-3">
+                      <label className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                        Created Date
+                      </label>
+                      <select value={createdDateFilter} onChange={(event) => setCreatedDateFilter(event.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={inputStyle}>
+                        <option value="all">All dates</option>
+                        {createdDateOptions.map((dateLabel) => (
+                          <option key={dateLabel} value={dateLabel}>
+                            {dateLabel}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="mt-6 space-y-4">
+                      {visibleAppointmentEntries.length === 0 ? (
+                        <p className="text-sm" style={{ color: theme.textMuted }}>
+                          No appointments in this filter.
+                        </p>
+                      ) : (
+                        visibleAppointmentEntries.map(([dateLabel, appointments]) => (
+                          <div key={dateLabel} className="rounded-[26px] border p-4" style={surfaceStyle}>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                              {dateLabel}
+                            </p>
+                            <div className="mt-4 space-y-3">
+                              {appointments.map((appointment) => {
+                                const tone = getAppointmentTone(appointment);
+                                const badgeLabel = tone === "completed" ? "Completed" : tone === "late" ? "Late" : "Upcoming";
+                                const badgeStyle =
+                                  tone === "completed"
+                                    ? { backgroundColor: theme.successSoft, color: theme.success }
+                                    : tone === "late"
+                                      ? { backgroundColor: theme.dangerSoft, color: theme.danger }
+                                      : { backgroundColor: theme.infoSoft, color: theme.accentStrong };
+                                return (
+                                  <div key={appointment.id} className="rounded-2xl border p-4" style={mutedSurfaceStyle}>
+                                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <p className="text-base font-semibold" style={{ color: theme.text }}>
+                                            {appointment.patient_name}
+                                          </p>
+                                          <span className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]" style={badgeStyle}>
+                                            {badgeLabel}
+                                          </span>
+                                        </div>
+                                        <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                                          {formatDateTime(appointment.time)}
+                                        </p>
+                                        {appointment.notes ? (
+                                          <p className="mt-3 text-sm leading-6" style={{ color: theme.textSubtle }}>
+                                            Notes: {appointment.notes}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedPatientId(appointment.patient_id)}
+                                          className="rounded-2xl border px-3.5 py-2 text-xs font-semibold"
+                                          style={secondaryButtonStyle}
+                                        >
+                                          Open Patient
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => decideAppointment(appointment.id, "approved")}
+                                          className="rounded-2xl px-3.5 py-2 text-xs font-semibold text-white"
+                                          style={{ backgroundColor: theme.success }}
+                                        >
+                                          Accept
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => decideAppointment(appointment.id, "rejected")}
+                                          className="rounded-2xl px-3.5 py-2 text-xs font-semibold text-white"
+                                          style={{ backgroundColor: theme.danger }}
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {Object.keys(visibleAppointmentGroups).length > 5 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllAppointmentGroups((value) => !value)}
+                        className="mt-4 rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                        style={secondaryButtonStyle}
+                      >
+                        {showAllAppointmentGroups ? "Show fewer dates" : `Show ${Object.keys(visibleAppointmentGroups).length - 5} more dates`}
+                      </button>
+                    ) : null}
+                  </section>
+
+                  {isDoctor ? (
+                    <section
+                      ref={(node) => {
+                        sectionRefs.current.observations = node;
+                      }}
+                      className="rounded-[32px] border p-6 sm:p-8"
+                      style={panelStyle}
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                            Progressive Patient Intake
+                          </p>
+                          <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                            The long intake form is now split into clinical steps so doctors can move from demographics to treatment without a giant scrolling wall.
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border px-4 py-3 text-sm" style={mutedSurfaceStyle}>
+                          <p className="font-semibold" style={{ color: theme.text }}>
+                            Step {INTAKE_STEPS.findIndex((step) => step.key === newPatientStep) + 1} of {INTAKE_STEPS.length}
+                          </p>
+                          <p className="mt-1" style={{ color: theme.textMuted }}>
+                            {INTAKE_STEPS.find((step) => step.key === newPatientStep)?.label}
+                          </p>
+                        </div>
+                      </div>
+
+                      <form onSubmit={createNewPatientInventory} className="mt-6">
+                        {renderStepperTabs(newPatientStep, setNewPatientStep)}
+                        <div className="mt-6">{renderNewPatientStepContent()}</div>
+                        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={() => moveStep(newPatientStep, -1, setNewPatientStep)}
+                              disabled={newPatientStep === "personal"}
+                              className="rounded-2xl border px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                              style={secondaryButtonStyle}
+                            >
+                              Back
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveStep(newPatientStep, 1, setNewPatientStep)}
+                              disabled={newPatientStep === "history"}
+                              className="rounded-2xl border px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                              style={secondaryButtonStyle}
+                            >
+                              Next
+                            </button>
+                          </div>
+                          <button type="submit" className="rounded-2xl px-5 py-3 text-sm font-semibold shadow-lg" style={primaryButtonStyle}>
+                            Save New Patient
+                          </button>
+                        </div>
+                      </form>
+
+                      {newPatientStatus ? (
+                        <p className="mt-4 text-sm font-semibold" style={{ color: theme.textSubtle }}>
+                          {newPatientStatus}
+                        </p>
+                      ) : null}
+                    </section>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <section
+                    ref={(node) => {
+                      sectionRefs.current.overview = node;
+                    }}
+                    className="rounded-[32px] border p-6 sm:p-8"
+                    style={panelStyle}
+                  >
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.accentStrong }}>
+                          Active Patient Workspace
+                        </p>
+                        <MotionText as="h2" text={selectedPatient.full_name} className="mt-2 font-display text-3xl font-extrabold tracking-tight sm:text-4xl" />
+                        <p className="mt-3 text-sm leading-7" style={{ color: theme.textMuted }}>
+                          Patient #{selectedPatient.id} • Last visit {formatDateTime(latestSelectedAppointment?.time || latestSelectedAppointment?.created_at)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPatientId(null);
+                            setPatientSearchInput("");
+                            setPatientSearchQuery("");
+                          }}
+                          className="rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                          style={secondaryButtonStyle}
+                        >
+                          Dashboard
+                        </button>
+                        <button type="button" onClick={() => printPrescriptionPdf(selectedPatient)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                          View Last Rx
+                        </button>
+                        <button type="button" onClick={() => openPatientWorkspace(selectedPatient.id, "observations", "treatment")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                          New Observation
+                        </button>
+                        <button type="button" onClick={() => openPatientWorkspace(selectedPatient.id, "appointments", "treatment")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                          Reschedule Visit
+                        </button>
+                        {isDoctor ? (
+                          <button
+                            type="button"
+                            onClick={() => setPatientPendingDelete(selectedPatient)}
+                            className="rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                            style={{
+                              borderColor: darkMode ? "#7f1d1d" : "#fecaca",
+                              backgroundColor: darkMode ? "rgba(127, 29, 29, 0.18)" : "#fff1f2",
+                              color: darkMode ? "#fecaca" : "#b91c1c",
+                            }}
+                          >
+                            Delete Patient
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-6 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-2xl border p-4" style={surfaceStyle}>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                          Last Visit
+                        </p>
+                        <p className="mt-2 text-lg font-semibold" style={{ color: theme.text }}>
+                          {formatDateTime(latestSelectedAppointment?.time || latestSelectedAppointment?.created_at)}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border p-4" style={surfaceStyle}>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                          Next Follow-up
+                        </p>
+                        <p className="mt-2 text-lg font-semibold" style={{ color: theme.text }}>
+                          {patientSupportDrafts[selectedPatient.id]?.followUpDate
+                            ? `${patientSupportDrafts[selectedPatient.id]?.followUpDate} ${patientSupportDrafts[selectedPatient.id]?.followUpTime || ""}`
+                            : "Not scheduled"}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border p-4" style={surfaceStyle}>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                          Preferred Language
+                        </p>
+                        <p className="mt-2 text-lg font-semibold" style={{ color: theme.text }}>
+                          {(inventoryDrafts[selectedPatient.id] || createEmptyInventoryDraft()).preferredLanguage || "English"}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section
+                    ref={(node) => {
+                      sectionRefs.current["patient-records"] = node;
+                    }}
+                    className="rounded-[32px] border p-6 sm:p-8"
+                    style={panelStyle}
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                          Patient Inventory
+                        </p>
+                        <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                          Progressive charting keeps personal information, symptoms, treatment, and history in distinct clinical steps.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border px-4 py-3 text-sm" style={mutedSurfaceStyle}>
+                        <p className="font-semibold" style={{ color: theme.text }}>
+                          Step {INTAKE_STEPS.findIndex((step) => step.key === selectedPatientStep) + 1} of {INTAKE_STEPS.length}
+                        </p>
+                        <p className="mt-1" style={{ color: theme.textMuted }}>
+                          {INTAKE_STEPS.find((step) => step.key === selectedPatientStep)?.label}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">{renderStepperTabs(selectedPatientStep, setSelectedPatientStep)}</div>
+                    <div className="mt-6">{renderSelectedPatientStepContent()}</div>
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => moveStep(selectedPatientStep, -1, setSelectedPatientStep)}
+                          disabled={selectedPatientStep === "personal"}
+                          className="rounded-2xl border px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                          style={secondaryButtonStyle}
+                        >
+                          Back
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveStep(selectedPatientStep, 1, setSelectedPatientStep)}
+                          disabled={selectedPatientStep === "history"}
+                          className="rounded-2xl border px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                          style={secondaryButtonStyle}
+                        >
+                          Next
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        {inventoryStatus[selectedPatient.id] ? (
+                          <p className="text-xs font-semibold" style={{ color: theme.textSubtle }}>
+                            {inventoryStatus[selectedPatient.id]}
+                          </p>
+                        ) : null}
+                        <button type="button" onClick={() => savePatientInventory(selectedPatient.id)} className="rounded-2xl px-5 py-3 text-sm font-semibold shadow-lg" style={primaryButtonStyle}>
+                          Save Inventory
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section
+                    ref={(node) => {
+                      sectionRefs.current.observations = node;
+                    }}
+                    className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
+                  >
+                    <div className="rounded-[32px] border p-6" style={panelStyle}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                            Clinical Notes
+                          </p>
+                          <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                            Voice-ready notes keep the active encounter focused in the middle pane.
+                          </p>
+                        </div>
+                        <ClipboardPenLine className="h-5 w-5" style={{ color: theme.accent }} />
+                      </div>
+                      <div className="mt-5">
+                        {renderVoiceTextArea({
+                          label: "Clinical Notes",
+                          value: doctorObservations,
+                          onChange: setDoctorObservations,
+                          placeholder: "Record assessment, impression, and active clinical observations.",
+                          minHeight: 240,
+                        })}
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setDoctorDashboardStatus(`Prescription notes ready for ${selectedPatient.full_name}. Save the treatment plan to persist them.`)}
+                          className="rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-lg"
+                          style={primaryButtonStyle}
+                        >
+                          Prescribe
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDoctorDashboardStatus(`Referral workflow is not automated yet. Add referral notes for ${selectedPatient.full_name} here.`)}
+                          className="rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                          style={secondaryButtonStyle}
+                        >
+                          Refer
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[32px] border p-6" style={panelStyle}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                            Messaging
+                          </p>
+                          <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                            Compose reminders without leaving the active chart.
+                          </p>
+                        </div>
+                        <MessageSquare className="h-5 w-5" style={{ color: theme.accent }} />
+                      </div>
+                      <div className="mt-5 grid gap-4">
+                        <input
+                          value={patientMessageDrafts[selectedPatient.id]?.subject || ""}
+                          onChange={(event) => updatePatientMessageDraft(selectedPatient.id, "subject", event.target.value)}
+                          className="rounded-2xl border px-4 py-3 text-sm"
+                          style={inputStyle}
+                          placeholder="Message subject"
+                        />
+                        <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                          <select
+                            value={patientMessageDrafts[selectedPatient.id]?.channel || "whatsapp"}
+                            onChange={(event) => updatePatientMessageDraft(selectedPatient.id, "channel", event.target.value as "whatsapp" | "sms")}
+                            className="rounded-2xl border px-4 py-3 text-sm"
+                            style={inputStyle}
+                          >
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="sms">SMS</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePatientMessageDraft(
+                                selectedPatient.id,
+                                "body",
+                                buildReminderMessage(
+                                  selectedPatient,
+                                  patientSupportDrafts[selectedPatient.id] || createEmptyPatientSupportDraft(),
+                                  inventoryDrafts[selectedPatient.id]?.followUpNotes || ""
+                                )
+                              )
+                            }
+                            className="rounded-2xl border px-4 py-3 text-sm font-semibold"
+                            style={secondaryButtonStyle}
+                          >
+                            Refresh from follow-up details
+                          </button>
+                        </div>
+                        <textarea
+                          value={patientMessageDrafts[selectedPatient.id]?.body || ""}
+                          onChange={(event) => updatePatientMessageDraft(selectedPatient.id, "body", event.target.value)}
+                          className="min-h-[200px] rounded-2xl border px-4 py-3 text-sm leading-7"
+                          style={inputStyle}
+                          placeholder="Draft a patient message"
+                        />
+                        <div className="flex flex-wrap gap-3">
+                          <button type="button" onClick={() => sendPatientMessage(selectedPatient)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-lg" style={primaryButtonStyle}>
+                            Send Message
+                          </button>
+                          <button type="button" onClick={() => void copyPatientMessage(selectedPatient.id)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                            Copy
+                          </button>
+                        </div>
+                        {messageStatus[selectedPatient.id] ? (
+                          <p className="text-xs font-semibold" style={{ color: theme.textSubtle }}>
+                            {messageStatus[selectedPatient.id]}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </section>
+
+                  <section
+                    ref={(node) => {
+                      sectionRefs.current.appointments = node;
+                    }}
+                    className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
+                  >
+                    <div className="space-y-6">
+                      <div className="rounded-[32px] border p-6" style={panelStyle}>
+                        <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                          Communication & Follow-up
+                        </p>
+                        <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                          Reschedule and reminder controls stay grouped together for fewer mental context switches.
+                        </p>
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                          <select value={patientSupportDrafts[selectedPatient.id]?.consultationMode || "In-person"} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "consultationMode", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle}>
+                            <option value="In-person">In-person</option>
+                            <option value="Teleconsultation">Teleconsultation</option>
+                            <option value="Video call">Video call</option>
+                          </select>
+                          <select value={patientSupportDrafts[selectedPatient.id]?.reminderChannel || "WhatsApp"} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "reminderChannel", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle}>
+                            <option value="WhatsApp">WhatsApp</option>
+                            <option value="SMS">SMS</option>
+                            <option value="Both">Both</option>
+                          </select>
+                          <input value={patientSupportDrafts[selectedPatient.id]?.teleconsultationLink || ""} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "teleconsultationLink", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm md:col-span-2" style={inputStyle} placeholder="Video consultation link" />
+                          <input type="date" value={patientSupportDrafts[selectedPatient.id]?.followUpDate || ""} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "followUpDate", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} />
+                          <input type="time" value={patientSupportDrafts[selectedPatient.id]?.followUpTime || "10:00"} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "followUpTime", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} />
+                        </div>
+                        <div className="mt-5 flex flex-wrap gap-3">
+                          <button type="button" onClick={() => savePatientSupportDetails(selectedPatient.id)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-lg" style={primaryButtonStyle}>
+                            Save Details
+                          </button>
+                          <button type="button" onClick={() => bookFollowUp(selectedPatient.id)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                            Book Follow-up
+                          </button>
+                          <button type="button" onClick={() => openReminder(selectedPatient, "whatsapp")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                            WhatsApp Reminder
+                          </button>
+                          <button type="button" onClick={() => openReminder(selectedPatient, "sms")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                            SMS Reminder
+                          </button>
+                        </div>
+                        {supportStatus[selectedPatient.id] ? (
+                          <p className="mt-4 text-xs font-semibold" style={{ color: theme.textSubtle }}>
+                            {supportStatus[selectedPatient.id]}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="rounded-[32px] border p-6" style={panelStyle}>
+                        <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                          Billing & Documents
+                        </p>
+                        <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                          Receipts and clinical documents remain available without taking over the charting flow.
+                        </p>
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                          <input value={patientSupportDrafts[selectedPatient.id]?.feeAmount || ""} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "feeAmount", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Consultation fee" />
+                          <input value={patientSupportDrafts[selectedPatient.id]?.receiptNumber || ""} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "receiptNumber", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle} placeholder="Receipt number" />
+                          <select value={patientSupportDrafts[selectedPatient.id]?.paymentStatus || "Pending"} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "paymentStatus", event.target.value)} className="rounded-2xl border px-4 py-3 text-sm" style={inputStyle}>
+                            <option value="Pending">Pending</option>
+                            <option value="Paid">Paid</option>
+                            <option value="Partially Paid">Partially Paid</option>
+                          </select>
+                          <textarea value={patientSupportDrafts[selectedPatient.id]?.paymentNotes || ""} onChange={(event) => updatePatientSupportDraft(selectedPatient.id, "paymentNotes", event.target.value)} className="min-h-[104px] rounded-2xl border px-4 py-3 text-sm md:col-span-2" style={inputStyle} placeholder="Billing notes" />
+                        </div>
+                        <div className="mt-5 flex flex-wrap gap-3">
+                          <button type="button" onClick={() => printPrescriptionPdf(selectedPatient)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-lg" style={primaryButtonStyle}>
+                            Prescription PDF
+                          </button>
+                          <button type="button" onClick={() => printReceipt(selectedPatient)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                            Print Receipt
+                          </button>
+                          {patientSupportDrafts[selectedPatient.id]?.teleconsultationLink ? (
+                            <a href={patientSupportDrafts[selectedPatient.id]?.teleconsultationLink || "#"} target="_blank" rel="noreferrer" className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                              Open Video Link
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[32px] border p-6" style={panelStyle}>
+                      <p className="text-xl font-semibold" style={{ color: theme.text }}>
+                        Patient History
+                      </p>
+                      <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                        Recent visits and notes stay visible while the patient snapshot remains pinned on the right.
+                      </p>
+                      <div className="mt-6 space-y-3">
+                        {visiblePatientHistory.length === 0 ? (
+                          <div className="rounded-2xl border px-4 py-4 text-sm" style={mutedSurfaceStyle}>
+                            <span style={{ color: theme.textMuted }}>No appointment history yet.</span>
+                          </div>
+                        ) : (
+                          visiblePatientHistory.map((item) => (
+                            <div key={item.id} className="rounded-2xl border p-4" style={surfaceStyle}>
+                              <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                                {formatDateTime(item.time || item.created_at)}
+                              </p>
+                              {item.notes ? (
+                                <p className="mt-2 text-sm leading-6" style={{ color: theme.textSubtle }}>
+                                  {item.notes}
+                                </p>
+                              ) : (
+                                <p className="mt-2 text-sm" style={{ color: theme.textMuted }}>
+                                  No notes attached.
+                                </p>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      {(selectedPatient.appointment_history || []).length > 5 ? (
+                        <button type="button" onClick={() => setShowAllPatientHistory((value) => !value)} className="mt-4 rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={secondaryButtonStyle}>
+                          {showAllPatientHistory ? "Show less history" : `Show ${(selectedPatient.appointment_history || []).length - 5} more history items`}
+                        </button>
+                      ) : null}
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {doctorDashboardStatus ? (
+                <p className="text-sm font-semibold" style={{ color: theme.textSubtle }}>
+                  {doctorDashboardStatus}
+                </p>
+              ) : null}
+            </div>
+
+            <aside className="xl:sticky xl:top-24">
+              <div className="rounded-[32px] border p-5" style={panelStyle}>
+                {!selectedPatient ? (
+                  <div className="rounded-[28px] border px-5 py-12 text-center" style={surfaceStyle}>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.accentStrong }}>
+                      Snapshot Panel
+                    </p>
+                    <p className="mt-3 text-2xl font-semibold tracking-tight" style={{ color: theme.text }}>
+                      Waiting for Patient Selection
+                    </p>
+                    <p className="mt-3 text-sm leading-7" style={{ color: theme.textMuted }}>
+                      Choose a patient from the directory, schedule, or global search to pin their critical clinical details here.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="rounded-[28px] border p-5"
+                      style={{
+                        ...surfaceStyle,
+                        background: darkMode
+                          ? `linear-gradient(160deg, rgba(56, 189, 248, 0.12), rgba(10, 25, 38, 0.96) 65%)`
+                          : `linear-gradient(160deg, rgba(37, 99, 235, 0.08), rgba(255,255,255,0.98) 62%)`,
+                      }}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-[22px] text-xl font-bold" style={{ backgroundColor: theme.accentSoft, color: theme.accentStrong }}>
+                          {getInitials(selectedPatient.full_name)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-2xl font-bold tracking-tight" style={{ color: theme.text }}>
+                            {selectedPatient.full_name}
+                          </p>
+                          <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>
+                            Patient #{selectedPatient.id}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
+                        <div className="rounded-2xl border p-3" style={mutedSurfaceStyle}>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                            Age
+                          </p>
+                          <p className="mt-2 text-lg font-semibold" style={{ color: theme.text }}>
+                            {calculateAge(selectedPatient.date_of_birth)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border p-3" style={mutedSurfaceStyle}>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                            Gender
+                          </p>
+                          <p className="mt-2 text-lg font-semibold" style={{ color: theme.text }}>
+                            {selectedPatient.gender || "Not recorded"}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border p-3" style={mutedSurfaceStyle}>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                            Blood Type
+                          </p>
+                          <p className="mt-2 text-lg font-semibold" style={{ color: theme.text }}>
+                            {selectedPatientBloodType}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border p-3" style={mutedSurfaceStyle}>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                            Last Visit
+                          </p>
+                          <p className="mt-2 text-sm font-semibold" style={{ color: theme.text }}>
+                            {formatDate(latestSelectedAppointment?.time || latestSelectedAppointment?.created_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div
+                        className="mt-4 rounded-2xl border px-4 py-4"
+                        style={{
+                          borderColor: darkMode ? "#7f1d1d" : "#fecaca",
+                          backgroundColor: theme.dangerSoft,
+                        }}
+                      >
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.danger }}>
+                          Allergies
+                        </p>
+                        <p className="mt-2 text-sm font-semibold leading-6" style={{ color: darkMode ? "#fecaca" : "#991b1b" }}>
+                          {selectedPatientAllergySummary}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+                        Last 3 Vitals
+                      </p>
+                      <div className="mt-3 grid gap-3">
+                        {selectedPatientMetrics.map((metric) => (
+                          <div key={metric.label} className="rounded-2xl border p-4" style={surfaceStyle}>
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                                {metric.label}
+                              </p>
+                              <Activity className="h-4 w-4" style={{ color: theme.accent }} />
+                            </div>
+                            <p className="mt-3 text-xl font-semibold" style={{ color: theme.text }}>
+                              {metric.value}
+                            </p>
+                            <svg viewBox="0 0 140 36" className="mt-4 h-10 w-full">
+                              <path d={buildSparklinePath(metric.trend)} fill="none" stroke={theme.accentStrong} strokeWidth="2.4" strokeLinecap="round" />
+                            </svg>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 grid gap-3">
+                        <div className="rounded-2xl border p-4" style={mutedSurfaceStyle}>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                            Latest Appointment
+                          </p>
+                          <p className="mt-2 text-sm font-semibold leading-6" style={{ color: theme.text }}>
+                            {formatDateTime(latestSelectedAppointment?.time || latestSelectedAppointment?.created_at)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border p-4" style={mutedSurfaceStyle}>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                            Next Follow-up
+                          </p>
+                          <p className="mt-2 text-sm font-semibold leading-6" style={{ color: theme.text }}>
+                            {patientSupportDrafts[selectedPatient.id]?.followUpDate
+                              ? `${patientSupportDrafts[selectedPatient.id]?.followUpDate} ${patientSupportDrafts[selectedPatient.id]?.followUpTime || ""}`
+                              : "Not scheduled"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </aside>
+          </div>
+
+          <datalist id="icd10-options">
+            {ICD10_SUGGESTIONS.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+          <datalist id="gender-options">
+            {GENDER_OPTIONS.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+          <datalist id="religion-options">
+            {RELIGION_OPTIONS.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+          <datalist id="language-options">
+            {LANGUAGE_OPTIONS.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+        </main>
+
+        {showPatientPicker ? (
+          <div className="fixed inset-0 z-40 flex items-end bg-slate-950/55 px-3 py-4 md:hidden">
+            <div className="w-full rounded-t-[28px] border p-3 shadow-2xl" style={surfaceStyle}>
+              <div className="mx-auto mb-3 h-1.5 w-14 rounded-full" style={{ backgroundColor: theme.panelBorder }} />
+              <div className="max-h-[68vh]">{renderPatientPickerContent()}</div>
+            </div>
+          </div>
+        ) : null}
+        {showPatientPicker && patientPickerPosition ? (
+          <div
+            ref={patientPickerOverlayRef}
+            className="fixed z-[80] hidden rounded-[24px] border p-2 shadow-2xl md:block"
+            style={{
+              top: patientPickerPosition.top,
+              left: patientPickerPosition.left,
+              width: patientPickerPosition.width,
+              ...surfaceStyle,
+            }}
+          >
+            <div className="max-h-72">{renderPatientPickerContent()}</div>
+          </div>
+        ) : null}
+
+        {patientPendingDelete ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
+            <div
+              className="w-full max-w-md rounded-[28px] border p-6 shadow-2xl"
+              style={{
+                borderColor: darkMode ? "#365567" : "#d8e1e7",
+                backgroundColor: darkMode ? "#112633" : "#ffffff",
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-full p-2" style={{ backgroundColor: darkMode ? "rgba(128, 39, 60, 0.24)" : "#fff1f4" }}>
+                  <XCircle className="h-5 w-5" style={{ color: darkMode ? "#ffc0cd" : "#c42854" }} />
+                </div>
+                <div>
+                  <p className="text-lg font-bold" style={{ color: darkMode ? "#f2f7fb" : "#17354c" }}>
+                    Delete patient record?
+                  </p>
+                  <p className="mt-2 text-sm leading-6" style={{ color: darkMode ? "#b9cfde" : "#5c7488" }}>
+                    Are you sure you want to delete {patientPendingDelete.full_name}? This will permanently remove the patient, their appointments, prescriptions, and inventory from the database.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPatientPendingDelete(null)}
+                  disabled={isDeletingPatient}
+                  className="rounded-2xl border px-4 py-2.5 text-sm font-semibold"
+                  style={{
+                    borderColor: darkMode ? "#365567" : "#d8e1e7",
+                    color: darkMode ? "#e0edf7" : "#234863",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deletePatientRecord()}
+                  disabled={isDeletingPatient}
+                  className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  style={{ backgroundColor: darkMode ? "#c53d65" : "#c42854" }}
+                >
+                  {isDeletingPatient ? "Deleting..." : "Yes, Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </PageFade>
+    );
+  }
+
   if (!isDoctor && !isAdmin) {
     return (
       <main className="min-h-screen bg-[#f4f1e7] px-4 py-16">
@@ -1227,1010 +3148,5 @@ export function DoctorClinicDashboardPage() {
     );
   }
 
-  return (
-    <PageFade
-      className="min-h-screen pb-12"
-      style={{
-        background: darkMode
-          ? "#0f1f2b"
-          : "#f6f4ef"
-      }}
-    >
-      <header
-        className="sticky top-0 z-40 border-b backdrop-blur-xl"
-        style={{
-          borderColor: darkMode ? "#203746" : "#d8d2c2",
-          backgroundColor: darkMode ? "rgba(11, 31, 42, 0.82)" : "rgba(244, 241, 231, 0.80)"
-        }}
-      >
-        <div className="flex w-full flex-col gap-4 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-10 2xl:px-14">
-          <div className="flex min-w-0 items-center gap-3">
-            {logo ? <img src={logo} alt={doctorName} className="h-10 w-10 rounded-full object-cover" /> : <Leaf className="h-5 w-5 text-[#35544a]" />}
-            <div className="min-w-0">
-              <p className="truncate font-display text-base font-extrabold" style={{ color: darkMode ? "#e8f3f1" : "#15342f" }}>{doctorName}</p>
-              <p className="text-xs" style={{ color: darkMode ? "#b8d0ca" : "#4b5d56" }}>Doctor Operations Dashboard</p>
-            </div>
-          </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:gap-3 lg:w-auto lg:justify-end">
-            <button
-              type="button"
-              onClick={() => setDarkMode((value) => !value)}
-              className="rounded-full border p-2"
-              style={{
-                borderColor: darkMode ? "#3f5867" : "#b7b09f",
-                backgroundColor: darkMode ? "#173243" : "#f8f2e6",
-                color: darkMode ? "#dff4f0" : "#15342f"
-              }}
-              aria-label="Toggle dark mode"
-            >
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <Link to={`/clinic/${id}`} className="rounded-full border border-[#9bb0a8] bg-[#f8f2e6] px-4 py-2 text-xs font-bold text-[#173e37] sm:text-sm">
-              Back to Website
-            </Link>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setProfileMenuOpen((value) => !value)}
-                className="rounded-full border border-[#b7b09f] bg-[#f8f2e6] p-2 text-[#15342f]"
-                aria-label="Open profile menu"
-              >
-                <UserRound className="h-5 w-5" />
-              </button>
-              {profileMenuOpen ? (
-                <div className="absolute right-0 mt-2 w-[min(16rem,calc(100vw-2rem))] rounded-2xl border border-[#d4ccb9] bg-[#fbf7ee] p-4 shadow-2xl">
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#5e6f68]">Signed in as</p>
-                  <p className="mt-1 text-sm font-bold text-[#173e37]">{isAdmin ? "admin" : "doctor"}</p>
-                  <InteractiveLogoutButton
-                    onClick={signOut}
-                    className="mt-3 w-full"
-                    style={{
-                      "--logout-bg": darkMode ? "#173243" : "#f8f2e6",
-                      "--logout-text": darkMode ? "#eaf5f9" : "#163b35",
-                      "--logout-door": darkMode ? "#63b8d8" : "#2f79bd",
-                      "--logout-figure": darkMode ? "#d9c07a" : "#cc8f2f",
-                      "--logout-shadow": darkMode ? "rgba(8, 20, 30, 0.42)" : "rgba(47, 121, 189, 0.18)"
-                    } as CSSProperties}
-                  />
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {isDoctor ? (
-        <section className="snap-section mt-6 w-full px-4 sm:px-6 lg:px-10 2xl:px-14">
-          <div className="grid gap-6">
-            <div className="rounded-[28px] border p-6 shadow-xl sm:p-8" style={{ borderColor: darkMode ? "#224759" : "#d7e8f4", backgroundColor: darkMode ? "#102a37" : "#ffffff" }}>
-              <MotionText as="h2" text="Create Patient Inventory" className="font-sans text-2xl font-bold tracking-tight" />
-              <p className="mt-2 text-sm" style={{ color: darkMode ? "#a7c4d7" : "#65839a" }}>
-                Add a brand new patient directly from the dashboard. If a patient books online later, appointment details continue under the same record.
-              </p>
-              <form onSubmit={createNewPatientInventory} className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input
-                  value={newPatientDraft.fullName}
-                  onChange={(e) => updateNewPatientDraft("fullName", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Patient name"
-                  required
-                />
-                <input
-                  value={newPatientDraft.phone}
-                  onChange={(e) => updateNewPatientDraft("phone", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Phone number"
-                />
-                <input
-                  value={newPatientDraft.age}
-                  onChange={(e) => updateNewPatientDraft("age", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Age"
-                  inputMode="numeric"
-                />
-                <input
-                  value={newPatientDraft.email}
-                  onChange={(e) => updateNewPatientDraft("email", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Email (optional)"
-                />
-                <select
-                  value={newPatientDraft.gender}
-                  onChange={(e) => updateNewPatientDraft("gender", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                >
-                  <option value="">Gender</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
-                <input
-                  value={newPatientDraft.dateOfBirth}
-                  onChange={(e) => updateNewPatientDraft("dateOfBirth", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  type="date"
-                  placeholder="Date of birth (optional)"
-                />
-                <select
-                  value={newPatientDraft.religion}
-                  onChange={(e) => updateNewPatientDraft("religion", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                >
-                  <option value="">Religion</option>
-                  <option value="Hindu">Hindu</option>
-                  <option value="Muslim">Muslim</option>
-                  <option value="Sikh">Sikh</option>
-                  <option value="Christian">Christian</option>
-                  <option value="Other">Other</option>
-                </select>
-                <input
-                  value={newPatientDraft.localAddress}
-                  onChange={(e) => updateNewPatientDraft("localAddress", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Local address"
-                />
-                <input
-                  value={newPatientDraft.pincode}
-                  onChange={(e) => void resolveNewPatientPincode(e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Pincode"
-                />
-                <input
-                  value={newPatientDraft.city}
-                  onChange={(e) => updateNewPatientDraft("city", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="City"
-                />
-                <input
-                  value={newPatientDraft.state}
-                  onChange={(e) => updateNewPatientDraft("state", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="State"
-                />
-                {newPatientPincodeStatus ? (
-                  <p className="text-xs font-medium sm:col-span-2" style={{ color: darkMode ? "#f6c38b" : "#9b5f1d" }}>
-                    {newPatientPincodeStatus}
-                  </p>
-                ) : null}
-                <textarea
-                  value={newPatientDraft.presentingComplaints}
-                  onChange={(e) => updateNewPatientDraft("presentingComplaints", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Presenting complaints"
-                />
-                <textarea
-                  value={newPatientDraft.diagnosis}
-                  onChange={(e) => updateNewPatientDraft("diagnosis", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Diagnosis"
-                />
-                <textarea
-                  value={newPatientDraft.investigation}
-                  onChange={(e) => updateNewPatientDraft("investigation", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Investigation"
-                />
-                <textarea
-                  value={newPatientDraft.finding}
-                  onChange={(e) => updateNewPatientDraft("finding", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Finding"
-                />
-                <textarea
-                  value={newPatientDraft.prescription}
-                  onChange={(e) => updateNewPatientDraft("prescription", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Prescription"
-                />
-                <textarea
-                  value={newPatientDraft.specialInstruction}
-                  onChange={(e) => updateNewPatientDraft("specialInstruction", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Special instruction"
-                />
-                <textarea
-                  value={newPatientDraft.familyHistory}
-                  onChange={(e) => updateNewPatientDraft("familyHistory", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Family history"
-                />
-                <textarea
-                  value={newPatientDraft.pastMedicationHistory}
-                  onChange={(e) => updateNewPatientDraft("pastMedicationHistory", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Past medication history"
-                />
-                <textarea
-                  value={newPatientDraft.surgicalHistory}
-                  onChange={(e) => updateNewPatientDraft("surgicalHistory", e.target.value)}
-                  className="rounded-2xl border p-3 text-sm sm:col-span-2"
-                  style={{ borderColor: darkMode ? "#2a5569" : "#cfe3f3", backgroundColor: darkMode ? "#0d2230" : "#f8fcff", color: darkMode ? "#eff8ff" : "#16314a" }}
-                  placeholder="Surgical history"
-                />
-                <button type="submit" className="rounded-2xl px-4 py-3 text-sm font-semibold text-white sm:col-span-2" style={{ backgroundColor: darkMode ? "#2f8fd1" : "#1f76c2" }}>
-                  Save New Patient
-                </button>
-              </form>
-              {newPatientStatus ? <p className="mt-3 text-sm font-semibold" style={{ color: darkMode ? "#9edbff" : "#335149" }}>{newPatientStatus}</p> : null}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      <motion.section className="snap-section mt-8 w-full px-4 sm:px-6 lg:px-10 2xl:px-14" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-        <div
-          className="rounded-[32px] border p-4 shadow-[0_22px_48px_rgba(15,35,55,0.08)] sm:p-6"
-          style={{
-            borderColor: darkMode ? "#24475a" : "#dde5ea",
-            backgroundColor: darkMode ? "#142636" : "#f6f4ef"
-          }}
-        >
-          <div className="grid gap-5 xl:grid-cols-12">
-            <div className="xl:col-span-3">
-              <div className="grid gap-5">
-                <div
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: darkMode ? "rgba(91, 181, 255, 0.14)" : "#eef6fb" }}>
-                      <Stethoscope className="h-5 w-5" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
-                    </div>
-                    <div>
-                      <MotionText as="h1" text="Doctor Dashboard" className="font-sans text-2xl font-semibold tracking-tight" />
-                      <p className="text-xs" style={{ color: darkMode ? "#aac0d0" : "#6e8495" }}>
-                        Arogya Ashram clinical workspace
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-5 space-y-2">
-                    {[
-                      { label: "Overview", icon: Stethoscope, section: "overview" as const },
-                      { label: "Patient Records", icon: Users, section: "patient-records" as const },
-                      { label: "Appointments", icon: CalendarClock, section: "appointments" as const },
-                      { label: "Observations", icon: ClipboardPenLine, section: "observations" as const }
-                    ].map((item) => (
-                      <button
-                        key={item.label}
-                        type="button"
-                        onClick={() => scrollToSection(item.section)}
-                        className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition"
-                        style={{
-                          borderColor:
-                            activeSection === item.section
-                              ? darkMode
-                                ? "#4f9fd5"
-                                : "#bad7ec"
-                              : darkMode
-                                ? "#2a5165"
-                                : "#e1e8ed",
-                          backgroundColor:
-                            activeSection === item.section
-                              ? darkMode
-                                ? "#18374a"
-                                : "#f1f9fe"
-                              : darkMode
-                                ? "#102332"
-                                : "#ffffff"
-                        }}
-                      >
-                        <item.icon className="h-4 w-4" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
-                        <span className="text-sm font-medium" style={{ color: darkMode ? "#eef7ff" : "#1e3446" }}>{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div
-                  ref={(node) => {
-                    sectionRefs.current.overview = node;
-                  }}
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <MotionText as="p" text="Statistics Overview" className="font-sans text-lg font-semibold" />
-                  <div className="mt-4 grid gap-3">
-                    {[
-                      { label: "Patient Count", value: String(doctorPatients.length), icon: Users },
-                      { label: "Appointments", value: String(doctorAppointments.length), icon: CalendarClock },
-                      { label: "Pending", value: String(doctorAppointments.filter((item) => item.status === "pending").length), icon: ClipboardPenLine }
-                    ].map((stat) => (
-                      <div
-                        key={stat.label}
-                        className="rounded-2xl border px-4 py-3"
-                        style={{
-                          borderColor: darkMode ? "#2a5165" : "#e1e8ed",
-                          backgroundColor: darkMode ? "#102332" : "#ffffff"
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-medium" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{stat.label}</p>
-                          <stat.icon className="h-4 w-4" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
-                        </div>
-                        <p className="mt-2 text-2xl font-semibold" style={{ color: darkMode ? "#f5fbff" : "#153047" }}>{stat.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div
-                  ref={(node) => {
-                    sectionRefs.current["patient-records"] = node;
-                  }}
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <CalendarClock className="h-4 w-4" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
-                    <MotionText as="p" text="Today's Appointments" className="font-sans text-lg font-semibold" />
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {sidebarAppointments.length === 0 ? (
-                      <div className="rounded-2xl border px-4 py-4 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#a7bfd0" : "#72889a" }}>
-                        No appointments scheduled for today.
-                      </div>
-                    ) : (
-                      sidebarAppointments.map((appointment) => (
-                        <div key={appointment.id} className="rounded-2xl border px-4 py-3" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold" style={{ color: darkMode ? "#eff8ff" : "#17354c" }}>{appointment.patient_name}</p>
-                              <p className="text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>
-                                {new Date(appointment.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </p>
-                            </div>
-                            <span className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]" style={{ backgroundColor: darkMode ? "#173446" : "#eef6fb", color: darkMode ? "#9ee0ff" : "#2f79bd" }}>
-                              {appointment.status === "approved" ? "Completed" : appointment.status === "pending" ? "Waiting" : "In-Progress"}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {todaysAppointments.length > 5 ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowAllSidebarAppointments((value) => !value)}
-                      className="mt-4 w-full rounded-2xl border px-4 py-2.5 text-sm font-semibold"
-                      style={{
-                        borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                        backgroundColor: darkMode ? "#102332" : "#f9fcfe",
-                        color: darkMode ? "#d9edf8" : "#234863"
-                      }}
-                    >
-                      {showAllSidebarAppointments ? "Show less" : `Open drawer (${todaysAppointments.length - 5} more)`}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            <div className="xl:col-span-4">
-              <div className="grid gap-5">
-                <div
-                  ref={(node) => {
-                    sectionRefs.current.appointments = node;
-                  }}
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <MotionText as="p" text="Patient Search" className="font-sans text-lg font-semibold" />
-                      <p className="text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>Locate patient records quickly</p>
-                    </div>
-                    <Search className="h-5 w-5" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
-                  </div>
-                  <div ref={patientSearchRef} className="mt-4 flex gap-2">
-                    <div className="relative flex-1">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: darkMode ? "#88adc5" : "#7a98ad" }} />
-                      <input
-                        ref={patientSearchInputRef}
-                        value={patientSearchInput}
-                        onChange={(e) => {
-                          setPatientSearchInput(e.target.value);
-                          setShowPatientPicker(true);
-                        }}
-                        onFocus={() => setShowPatientPicker(true)}
-                        className="w-full rounded-2xl border py-3 pl-10 pr-3 text-sm"
-                        style={{
-                          borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                          backgroundColor: darkMode ? "#102332" : "#ffffff",
-                          color: darkMode ? "#eff8ff" : "#18344c"
-                        }}
-                        placeholder="Search by patient name, ID, or address"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPatientSearchQuery(patientSearchInput);
-                        setShowPatientPicker(true);
-                      }}
-                      className="rounded-2xl px-4 py-3 text-sm font-semibold text-white"
-                      style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}
-                    >
-                      Search
-                    </button>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {!patientSearchQuery.trim() ? (
-                      <div className="rounded-2xl border px-4 py-4 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#a7bfd0" : "#72889a" }}>
-                        Search by patient name, ID, phone, or address to view records.
-                      </div>
-                    ) : visiblePatientDirectory.length === 0 ? (
-                      <div className="rounded-2xl border px-4 py-4 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#a7bfd0" : "#72889a" }}>
-                        No patient records found.
-                      </div>
-                    ) : (
-                      visiblePatientDirectory.map((patient) => (
-                        <button
-                          key={patient.id}
-                          type="button"
-                          onClick={() => setSelectedPatientId(patient.id)}
-                          className="w-full rounded-2xl border p-4 text-left"
-                          style={{
-                            borderColor: selectedPatient?.id === patient.id ? (darkMode ? "#4f9fd5" : "#bad7ec") : (darkMode ? "#2a5165" : "#e1e8ed"),
-                            backgroundColor: selectedPatient?.id === patient.id ? (darkMode ? "#18374a" : "#f1f9fe") : (darkMode ? "#102332" : "#ffffff")
-                          }}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold" style={{ color: darkMode ? "#eff8ff" : "#17354c" }}>{patient.full_name}</p>
-                              <p className="mt-1 text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>ID #{patient.id}</p>
-                            </div>
-                            <span className="rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em]" style={{ backgroundColor: darkMode ? "#173446" : "#eef6fb", color: darkMode ? "#9ee0ff" : "#2f79bd" }}>
-                              {patient.appointment_history?.[0]?.created_at ? new Date(patient.appointment_history[0].created_at).toLocaleDateString() : "New"}
-                            </span>
-                          </div>
-                          <p className="mt-2 line-clamp-1 text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{patient.address || patient.email}</p>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                  {patientSearchQuery.trim() && filteredDoctorPatients.length > 5 ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowAllPatientDirectory((value) => !value)}
-                      className="mt-4 w-full rounded-2xl border px-4 py-2.5 text-sm font-semibold"
-                      style={{
-                        borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                        backgroundColor: darkMode ? "#102332" : "#f9fcfe",
-                        color: darkMode ? "#d9edf8" : "#234863"
-                      }}
-                    >
-                      {showAllPatientDirectory ? "Show less patients" : `Open patient drawer (${filteredDoctorPatients.length - 5} more)`}
-                    </button>
-                  ) : null}
-                </div>
-
-                <div
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <MotionText as="p" text="Selected Patient Details" className="font-sans text-lg font-semibold" />
-                  {selectedPatient ? (
-                    <div className="mt-4 grid gap-3">
-                      {[
-                        { label: "Name", value: selectedPatient.full_name },
-                        { label: "Age", value: calculateAge(selectedPatient.date_of_birth) },
-                        { label: "Phone", value: selectedPatient.phone || "-" },
-                        { label: "Address", value: selectedPatient.address || "-" },
-                        { label: "Gender", value: selectedPatient.gender || "-" },
-                      ].map((item) => (
-                        <div key={item.label} className="rounded-2xl border px-4 py-3" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{item.label}</p>
-                          <p className="mt-1 text-sm font-medium" style={{ color: darkMode ? "#eef7ff" : "#18344c" }}>{item.value}</p>
-                        </div>
-                      ))}
-                      {isDoctor ? (
-                        <button
-                          type="button"
-                          onClick={() => setPatientPendingDelete(selectedPatient)}
-                          className="rounded-2xl border px-4 py-3 text-sm font-semibold"
-                          style={{
-                            borderColor: darkMode ? "#7a3042" : "#f0bcc8",
-                            backgroundColor: darkMode ? "rgba(97, 29, 47, 0.3)" : "#fff3f6",
-                            color: darkMode ? "#ffc6d2" : "#b4234f"
-                          }}
-                        >
-                          Delete Patient
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-sm" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>Select a patient to inspect details.</p>
-                  )}
-                </div>
-
-                <div
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <MotionText as="p" text="Vitals Sparklines" className="font-sans text-lg font-semibold" />
-                  <div className="mt-4 grid gap-3">
-                    {selectedPatient ? selectedPatientMetrics.map((metric) => (
-                      <div key={metric.label} className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{metric.label}</p>
-                          <Activity className="h-4 w-4" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
-                        </div>
-                        <p className="mt-2 text-xl font-semibold" style={{ color: darkMode ? "#f5fbff" : "#153047" }}>{metric.value}</p>
-                        <svg viewBox="0 0 140 36" className="mt-3 h-10 w-full">
-                          <path d={buildSparklinePath(metric.trend)} fill="none" stroke={darkMode ? "#8edbff" : "#2f79bd"} strokeWidth="2.4" strokeLinecap="round" />
-                        </svg>
-                      </div>
-                    )) : (
-                      <p className="text-sm" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>Vitals will appear after a patient is selected.</p>
-                    )}
-                  </div>
-                </div>
-                {showPatientPicker ? (
-                  <div className="fixed inset-0 z-40 flex items-end bg-slate-950/55 px-3 py-4 md:hidden">
-                    <div
-                      className="w-full rounded-t-[28px] border p-3 shadow-2xl"
-                      style={{
-                        borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                        backgroundColor: darkMode ? "#102332" : "#ffffff"
-                      }}
-                    >
-                      <div className="mx-auto mb-3 h-1.5 w-14 rounded-full" style={{ backgroundColor: darkMode ? "#31596f" : "#d4e0e8" }} />
-                      <div className="max-h-[68vh]">
-                        {renderPatientPickerContent()}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                {showPatientPicker && patientPickerPosition ? (
-                  <div
-                    ref={patientPickerOverlayRef}
-                    className="fixed z-[80] hidden rounded-[24px] border p-2 shadow-2xl md:block"
-                    style={{
-                      top: patientPickerPosition.top,
-                      left: patientPickerPosition.left,
-                      width: patientPickerPosition.width,
-                      borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                      backgroundColor: darkMode ? "#102332" : "#ffffff"
-                    }}
-                  >
-                    <div className="max-h-72">
-                      {renderPatientPickerContent()}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="xl:col-span-5">
-              <div className="grid gap-5">
-                <div
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <MotionText as="p" text="Prescription & History" className="font-sans text-lg font-semibold" />
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { key: "pending", label: "Pending" },
-                        { key: "approved", label: "Approved" },
-                        { key: "rejected", label: "Rejected" },
-                        { key: "all", label: "All" }
-                      ].map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => setAppointmentFilter(item.key as "all" | "pending" | "approved" | "rejected")}
-                          className="rounded-full px-3 py-1.5 text-xs font-semibold"
-                          style={
-                            appointmentFilter === item.key
-                              ? { backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd", color: "#ffffff" }
-                              : { border: `1px solid ${darkMode ? "#2a5165" : "#d7e3eb"}`, color: darkMode ? "#d9edf8" : "#234863" }
-                          }
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-center gap-2">
-                    <label className="text-xs font-semibold" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>Date</label>
-                    <select
-                      value={createdDateFilter}
-                      onChange={(e) => setCreatedDateFilter(e.target.value)}
-                      className="rounded-2xl border px-3 py-2 text-sm"
-                      style={{
-                        borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                        backgroundColor: darkMode ? "#102332" : "#ffffff",
-                        color: darkMode ? "#eff8ff" : "#18344c"
-                      }}
-                    >
-                      <option value="all">25/03/2026 style date picker</option>
-                      {createdDateOptions.map((dateLabel) => (
-                        <option key={dateLabel} value={dateLabel}>
-                          {dateLabel}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="mt-4 space-y-4">
-                    {visibleAppointmentEntries.length === 0 ? (
-                      <p className="text-sm" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>No appointments in this filter.</p>
-                    ) : (
-                      visibleAppointmentEntries.map(([dateLabel, appointments]) => (
-                        <div key={dateLabel} className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{dateLabel}</p>
-                          <div className="mt-3 space-y-3">
-                            {appointments.map((appointment) => (
-                              <div key={appointment.id} className="rounded-2xl border p-3" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>{appointment.patient_name}</p>
-                                    <p className="text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{new Date(appointment.time).toLocaleString()}</p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedPatientId(appointment.patient_id);
-                                      scrollToSection("patient-records");
-                                    }}
-                                    className="rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]"
-                                    style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}
-                                  >
-                                    Open
-                                  </button>
-                                </div>
-                                {appointment.notes ? <p className="mt-2 text-xs" style={{ color: darkMode ? "#d4e6f2" : "#446177" }}>Notes: {appointment.notes}</p> : null}
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => decideAppointment(appointment.id, "approved")}
-                                    className="inline-flex items-center gap-1 rounded-2xl px-3 py-2 text-xs font-semibold text-white"
-                                    style={{ backgroundColor: "#2e9f68" }}
-                                  >
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    Accept
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => decideAppointment(appointment.id, "rejected")}
-                                    className="inline-flex items-center gap-1 rounded-2xl px-3 py-2 text-xs font-semibold text-white"
-                                    style={{ backgroundColor: "#d95b66" }}
-                                  >
-                                    <XCircle className="h-3.5 w-3.5" />
-                                    Reject
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {Object.keys(visibleAppointmentGroups).length > 5 ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowAllAppointmentGroups((value) => !value)}
-                      className="mt-4 w-full rounded-2xl border px-4 py-2.5 text-sm font-semibold"
-                      style={{
-                        borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                        backgroundColor: darkMode ? "#102332" : "#f9fcfe",
-                        color: darkMode ? "#d9edf8" : "#234863"
-                      }}
-                    >
-                      {showAllAppointmentGroups ? "Show fewer dates" : `Open appointments drawer (${Object.keys(visibleAppointmentGroups).length - 5} more dates)`}
-                    </button>
-                  ) : null}
-
-                  {selectedPatient ? (
-                    <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
-                      <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Patient History</p>
-                      <div className="mt-3 space-y-3">
-                        {visiblePatientHistory.map((item) => (
-                          <div key={item.id} className="rounded-2xl border p-3" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
-                            <p className="text-xs" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{item.time ? new Date(item.time).toLocaleString() : "-"}</p>
-                            {item.notes ? <p className="mt-1 text-sm" style={{ color: darkMode ? "#d4e6f2" : "#446177" }}>{item.notes}</p> : null}
-                          </div>
-                        ))}
-                      </div>
-                      {(selectedPatient.appointment_history || []).length > 5 ? (
-                        <button
-                          type="button"
-                          onClick={() => setShowAllPatientHistory((value) => !value)}
-                          className="mt-4 w-full rounded-2xl border px-4 py-2.5 text-sm font-semibold"
-                          style={{
-                            borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                            backgroundColor: darkMode ? "#102332" : "#f9fcfe",
-                            color: darkMode ? "#d9edf8" : "#234863"
-                          }}
-                        >
-                          {showAllPatientHistory ? "Show less history" : `Open history drawer (${(selectedPatient.appointment_history || []).length - 5} more)`}
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div
-                  ref={(node) => {
-                    sectionRefs.current.observations = node;
-                  }}
-                  className="rounded-[28px] border p-5"
-                  style={{
-                    borderColor: darkMode ? "#284c5f" : "#dde5ea",
-                    backgroundColor: darkMode ? "rgba(18, 37, 53, 0.9)" : "rgba(255,255,255,0.88)",
-                    backdropFilter: "blur(14px)"
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <MotionText as="p" text="Doctor's Observations" className="font-sans text-lg font-semibold" />
-                    <ClipboardPenLine className="h-5 w-5" style={{ color: darkMode ? "#8edbff" : "#2f79bd" }} />
-                  </div>
-                  <textarea
-                    value={doctorObservations}
-                    onChange={(e) => setDoctorObservations(e.target.value)}
-                    className="mt-4 min-h-[180px] w-full rounded-2xl border p-4 text-sm leading-6"
-                    style={{
-                      borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                      backgroundColor: darkMode ? "#102332" : "#ffffff",
-                      color: darkMode ? "#eff8ff" : "#18344c"
-                    }}
-                    placeholder="Record clinical observations, follow-up notes, or instructions."
-                  />
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!selectedPatient) {
-                          setDoctorDashboardStatus("Select a patient first to start prescribing.");
-                          scrollToSection("patient-records");
-                          return;
-                        }
-                        scrollToSection("observations");
-                        setDoctorDashboardStatus(`Prescription notes ready for ${selectedPatient.full_name}. Update the inventory below and save it.`);
-                      }}
-                      className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white"
-                      style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}
-                    >
-                      Prescribe
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!selectedPatient) {
-                          setDoctorDashboardStatus("Select a patient first to prepare a referral note.");
-                          scrollToSection("patient-records");
-                          return;
-                        }
-                        scrollToSection("observations");
-                        setDoctorDashboardStatus(`Referral workflow is not automated yet. Add referral notes for ${selectedPatient.full_name} in Doctor's Observations.`);
-                      }}
-                      className="rounded-2xl border px-4 py-2.5 text-sm font-semibold"
-                      style={{
-                        borderColor: darkMode ? "#2a5165" : "#d7e3eb",
-                        color: darkMode ? "#d9edf8" : "#234863"
-                      }}
-                    >
-                      Refer
-                    </button>
-                  </div>
-
-                  {selectedPatient && isDoctor ? (
-                    <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
-                      <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Patient Inventory</p>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <input value={inventoryDrafts[selectedPatient.id]?.religion || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "religion", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Religion" />
-                        <input value={inventoryDrafts[selectedPatient.id]?.investigationDate || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "investigationDate", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} type="date" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.presentingComplaints || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "presentingComplaints", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Presenting complaints" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.diagnosis || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "diagnosis", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Diagnosis" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.investigation || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "investigation", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Investigation" />
-                        <input value={inventoryDrafts[selectedPatient.id]?.findingDate || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "findingDate", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} type="date" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.finding || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "finding", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Finding" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.prescription || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "prescription", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Prescription" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.specialInstruction || ""} onChange={(e) => { updateInventoryDraft(selectedPatient.id, "specialInstruction", e.target.value); setDoctorObservations(e.target.value); }} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Special instruction" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.familyHistory || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "familyHistory", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Family history" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.pastMedicationHistory || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "pastMedicationHistory", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Past medication history" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.surgicalHistory || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "surgicalHistory", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Surgical history" />
-                        <select value={inventoryDrafts[selectedPatient.id]?.preferredLanguage || "English"} onChange={(e) => updateInventoryDraft(selectedPatient.id, "preferredLanguage", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }}>
-                          <option value="English">English</option>
-                          <option value="Hindi">Hindi</option>
-                        </select>
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.dietPlan || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "dietPlan", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Diet plan / ahar advice" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.pathya || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "pathya", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Pathya (recommended)" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.apathya || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "apathya", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Apathya (avoid)" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.labReports || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "labReports", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Lab report vault, one item per line" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.documentVault || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "documentVault", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Document vault / shared files, one item per line" />
-                        <textarea value={inventoryDrafts[selectedPatient.id]?.followUpNotes || ""} onChange={(e) => updateInventoryDraft(selectedPatient.id, "followUpNotes", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Follow-up plan and revisit notes" />
-                      </div>
-                      <div className="mt-4 flex flex-wrap items-center gap-3">
-                        <button type="button" onClick={() => savePatientInventory(selectedPatient.id)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}>
-                          Save Inventory
-                        </button>
-                        {inventoryStatus[selectedPatient.id] ? <p className="text-xs font-semibold" style={{ color: darkMode ? "#9edbff" : "#335149" }}>{inventoryStatus[selectedPatient.id]}</p> : null}
-                      </div>
-
-                      <div className="mt-6 grid gap-4 xl:grid-cols-2">
-                        <div className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
-                          <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Teleconsultation, Follow-up, Reminders</p>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <select value={patientSupportDrafts[selectedPatient.id]?.consultationMode || "In-person"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "consultationMode", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }}>
-                              <option value="In-person">In-person</option>
-                              <option value="Teleconsultation">Teleconsultation</option>
-                              <option value="Video call">Video call</option>
-                            </select>
-                            <select value={patientSupportDrafts[selectedPatient.id]?.reminderChannel || "WhatsApp"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "reminderChannel", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }}>
-                              <option value="WhatsApp">WhatsApp</option>
-                              <option value="SMS">SMS</option>
-                              <option value="Both">Both</option>
-                            </select>
-                            <input value={patientSupportDrafts[selectedPatient.id]?.teleconsultationLink || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "teleconsultationLink", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Video consultation link" />
-                            <input type="date" value={patientSupportDrafts[selectedPatient.id]?.followUpDate || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "followUpDate", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} />
-                            <input type="time" value={patientSupportDrafts[selectedPatient.id]?.followUpTime || "10:00"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "followUpTime", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} />
-                          </div>
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <button type="button" onClick={() => savePatientSupportDetails(selectedPatient.id)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}>
-                              Save Details
-                            </button>
-                            <button type="button" onClick={() => bookFollowUp(selectedPatient.id)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
-                              Book Follow-up
-                            </button>
-                            <button type="button" onClick={() => openReminder(selectedPatient, "whatsapp")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
-                              WhatsApp Reminder
-                            </button>
-                            <button type="button" onClick={() => openReminder(selectedPatient, "sms")} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
-                              SMS Reminder
-                            </button>
-                          </div>
-                          {supportStatus[selectedPatient.id] ? <p className="mt-3 text-xs font-semibold" style={{ color: darkMode ? "#9edbff" : "#335149" }}>{supportStatus[selectedPatient.id]}</p> : null}
-                        </div>
-
-                        <div className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
-                          <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Billing, Receipts, Prescription PDF</p>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <input value={patientSupportDrafts[selectedPatient.id]?.feeAmount || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "feeAmount", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Consultation fee" />
-                            <input value={patientSupportDrafts[selectedPatient.id]?.receiptNumber || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "receiptNumber", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Receipt number" />
-                            <select value={patientSupportDrafts[selectedPatient.id]?.paymentStatus || "Pending"} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "paymentStatus", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }}>
-                              <option value="Pending">Pending</option>
-                              <option value="Paid">Paid</option>
-                              <option value="Partially Paid">Partially Paid</option>
-                            </select>
-                            <textarea value={patientSupportDrafts[selectedPatient.id]?.paymentNotes || ""} onChange={(e) => updatePatientSupportDraft(selectedPatient.id, "paymentNotes", e.target.value)} className="rounded-2xl border px-3 py-2.5 text-sm sm:col-span-2" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#102332" : "#ffffff", color: darkMode ? "#eff8ff" : "#18344c" }} placeholder="Billing notes" />
-                          </div>
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <button type="button" onClick={() => printPrescriptionPdf(selectedPatient)} className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: darkMode ? "#2f8fd1" : "#2f79bd" }}>
-                              Prescription PDF
-                            </button>
-                            <button type="button" onClick={() => printReceipt(selectedPatient)} className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
-                              Print Receipt
-                            </button>
-                            {patientSupportDrafts[selectedPatient.id]?.teleconsultationLink ? (
-                              <a href={patientSupportDrafts[selectedPatient.id]?.teleconsultationLink || "#"} target="_blank" rel="noreferrer" className="rounded-2xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", color: darkMode ? "#d9edf8" : "#234863" }}>
-                                Open Video Link
-                              </a>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-5 rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#e1e8ed", backgroundColor: darkMode ? "#102332" : "#ffffff" }}>
-                    <p className="text-sm font-semibold" style={{ color: darkMode ? "#eef7ff" : "#17354c" }}>Clinic Analytics Snapshot</p>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      {[
-                        { label: "Projected Revenue", value: `Rs ${clinicAnalytics.totalRevenue.toFixed(0)}` },
-                        { label: "Teleconsultations", value: String(clinicAnalytics.teleconsultations) },
-                        { label: "Reminder-ready Visits", value: String(clinicAnalytics.remindersConfigured) },
-                        { label: "Top Language", value: clinicAnalytics.topLanguage },
-                      ].map((item) => (
-                        <div key={item.label} className="rounded-2xl border p-4" style={{ borderColor: darkMode ? "#2a5165" : "#d7e3eb", backgroundColor: darkMode ? "#142636" : "#f9fcfe" }}>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: darkMode ? "#a7bfd0" : "#72889a" }}>{item.label}</p>
-                          <p className="mt-2 text-lg font-semibold" style={{ color: darkMode ? "#f5fbff" : "#153047" }}>{item.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          {doctorDashboardStatus ? <p className="mt-4 text-sm font-semibold" style={{ color: darkMode ? "#9edbff" : "#335149" }}>{doctorDashboardStatus}</p> : null}
-        </div>
-      </motion.section>
-      {patientPendingDelete ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
-          <div
-            className="w-full max-w-md rounded-[28px] border p-6 shadow-2xl"
-            style={{
-              borderColor: darkMode ? "#365567" : "#d8e1e7",
-              backgroundColor: darkMode ? "#112633" : "#ffffff"
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="rounded-full p-2" style={{ backgroundColor: darkMode ? "rgba(128, 39, 60, 0.24)" : "#fff1f4" }}>
-                <XCircle className="h-5 w-5" style={{ color: darkMode ? "#ffc0cd" : "#c42854" }} />
-              </div>
-              <div>
-                <p className="text-lg font-bold" style={{ color: darkMode ? "#f2f7fb" : "#17354c" }}>Delete patient record?</p>
-                <p className="mt-2 text-sm leading-6" style={{ color: darkMode ? "#b9cfde" : "#5c7488" }}>
-                  Are you sure you want to delete {patientPendingDelete.full_name}? This will permanently remove the patient, their appointments, prescriptions, and inventory from the database.
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPatientPendingDelete(null)}
-                disabled={isDeletingPatient}
-                className="rounded-2xl border px-4 py-2.5 text-sm font-semibold"
-                style={{
-                  borderColor: darkMode ? "#365567" : "#d8e1e7",
-                  color: darkMode ? "#e0edf7" : "#234863"
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void deletePatientRecord()}
-                disabled={isDeletingPatient}
-                className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
-                style={{ backgroundColor: darkMode ? "#c53d65" : "#c42854" }}
-              >
-                {isDeletingPatient ? "Deleting..." : "Yes, Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </PageFade>
-  );
+  return renderRedesignedDashboard();
 }

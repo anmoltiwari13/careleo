@@ -4,10 +4,15 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Activity,
   CalendarDays,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   HeartPulse,
   Leaf,
+  Quote,
+  ScanSearch,
+  Sprout,
+  TreePine,
   Moon,
   ShieldCheck,
   Sparkles,
@@ -97,6 +102,12 @@ interface Testimonial {
   concern: string;
   text: string;
   rating: number;
+}
+
+interface ValueCard {
+  title: string;
+  body: string;
+  icon: typeof Activity;
 }
 
 const quizQuestions: QuizQuestion[] = [
@@ -329,6 +340,24 @@ const testimonials: Testimonial[] = [
   }
 ];
 
+const whyAyurvedaCards: ValueCard[] = [
+  {
+    title: "Precision Ayurveda",
+    body: "Personalized Precision. Tailored treatment plans based on your unique genetic and metabolic composition.",
+    icon: ScanSearch,
+  },
+  {
+    title: "Natural Remedies",
+    body: "Root-Cause Resolution. Using powerful, natural compounds to treat illness at its source, not just mask symptoms.",
+    icon: Sprout,
+  },
+  {
+    title: "Long-Term Wellness",
+    body: "Sustainable Vitality. Build robust health, immunity, and mental clarity that lasts a lifetime.",
+    icon: TreePine,
+  },
+];
+
 const practitionerHeroImage = practitionerPortrait;
 
 const arogyaWisdom = [
@@ -420,6 +449,59 @@ function getDoshaScore(answers: Dosha[]): Record<Dosha, number> {
   return score;
 }
 
+function getStoryPreview(text: string): string {
+  if (text.length <= 88) {
+    return text;
+  }
+  return `${text.slice(0, 88).trim()}...`;
+}
+
+function renderBodyTypeVisual(index: number, color: string, muted: string) {
+  const widths = [20, 28, 36];
+  const shoulderWidths = [24, 34, 44];
+  const labels = ["Lean and light", "Moderate and athletic", "Broad and sturdy"];
+  return (
+    <svg viewBox="0 0 120 120" className="h-24 w-24" aria-hidden="true">
+      <circle cx="60" cy="22" r="12" fill={color} opacity="0.88" />
+      <rect x={60 - shoulderWidths[index] / 2} y="38" width={shoulderWidths[index]} height="26" rx="12" fill={color} opacity="0.92" />
+      <rect x={60 - widths[index] / 2} y="60" width={widths[index]} height="30" rx="12" fill={color} />
+      <rect x={42 - index * 1.5} y="44" width="10" height="34" rx="5" fill={muted} opacity="0.9" />
+      <rect x={68 + index * 1.5} y="44" width="10" height="34" rx="5" fill={muted} opacity="0.9" />
+      <rect x={49 - index} y="88" width="10" height="24" rx="5" fill={muted} opacity="0.85" />
+      <rect x={61 + index} y="88" width="10" height="24" rx="5" fill={muted} opacity="0.85" />
+      <text x="60" y="116" textAnchor="middle" fontSize="8" fill={muted}>{labels[index]}</text>
+    </svg>
+  );
+}
+
+function BrandSeal({
+  primary,
+  gold,
+  textColor,
+  faint = false,
+  className = "",
+}: {
+  primary: string;
+  gold: string;
+  textColor: string;
+  faint?: boolean;
+  className?: string;
+}) {
+  const opacity = faint ? 0.12 : 1;
+  return (
+    <svg viewBox="0 0 120 120" className={className} aria-hidden="true">
+      <circle cx="60" cy="60" r="55" fill="none" stroke={primary} strokeWidth="2.5" opacity={opacity} />
+      <circle cx="60" cy="60" r="46" fill="none" stroke={gold} strokeWidth="1.8" opacity={opacity} />
+      <circle cx="60" cy="60" r="18" fill={primary} opacity={faint ? 0.08 : 0.96} />
+      <path d="M60 44c8 6 12 14 12 22 0 8-5 14-12 18-7-4-12-10-12-18 0-8 4-16 12-22Z" fill={gold} opacity={faint ? 0.2 : 0.95} />
+      <path d="M60 49c4 3 6 7 6 11 0 4-2 8-6 10-4-2-6-6-6-10 0-4 2-8 6-11Z" fill={textColor} opacity={faint ? 0.2 : 0.9} />
+      <text x="60" y="19" textAnchor="middle" fontSize="8" letterSpacing="2" fill={textColor} opacity={opacity}>AROGYA</text>
+      <text x="60" y="106" textAnchor="middle" fontSize="8" letterSpacing="2" fill={textColor} opacity={opacity}>ASHRAM</text>
+      <text x="60" y="64" textAnchor="middle" fontSize="12" fontWeight="700" fill={faint ? primary : "#f5f5dc"} opacity={faint ? 0.18 : 1}>AA</text>
+    </svg>
+  );
+}
+
 export function ClinicHomepagePage() {
   const { id } = useParams();
 
@@ -434,6 +516,8 @@ export function ClinicHomepagePage() {
   const [quizLanguage, setQuizLanguage] = useState<"en" | "hi">("en");
   const [timelineIndex, setTimelineIndex] = useState(0);
   const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const [expandedStoryIndex, setExpandedStoryIndex] = useState<number | null>(null);
+  const [showFloatingBooking, setShowFloatingBooking] = useState(false);
 
   const [appointmentDate, setAppointmentDate] = useState("");
   const [appointmentTime, setAppointmentTime] = useState("10:00");
@@ -471,7 +555,6 @@ export function ClinicHomepagePage() {
   const [signupLocalAddress, setSignupLocalAddress] = useState("");
   const [pincodeStatus, setPincodeStatus] = useState("");
   const [signupGender, setSignupGender] = useState("");
-  const [signupDob, setSignupDob] = useState("");
   const [bookingEmail, setBookingEmail] = useState("");
   const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem("careleo_doctor_site_theme") === "dark");
   const reduceMotion = useReducedMotion();
@@ -479,7 +562,7 @@ export function ClinicHomepagePage() {
     () =>
       darkMode
         ? {
-            pageGradient: "linear-gradient(180deg, #071a1f 0%, #0c262b 52%, #0b1e23 100%)",
+            pageGradient: "radial-gradient(circle at 15% 18%, rgba(215,180,111,0.12), transparent 18%), linear-gradient(180deg, #0d1715 0%, #142722 52%, #101d1a 100%)",
             headerBg: "rgba(7, 23, 28, 0.82)",
             border: "#1f4349",
             surface: "#112e35",
@@ -492,7 +575,7 @@ export function ClinicHomepagePage() {
             gold: "#d7b46f"
           }
         : {
-            pageGradient: "linear-gradient(180deg, #f0f6f1 0%, #e7f1ed 45%, #f5efe2 100%)",
+            pageGradient: "radial-gradient(circle at 12% 12%, rgba(215,180,111,0.18), transparent 18%), linear-gradient(180deg, #f7f5e9 0%, #eef4eb 42%, #f5f1df 100%)",
             headerBg: "rgba(240, 246, 241, 0.86)",
             border: "#b8d3ca",
             surface: "#f6fbf8",
@@ -510,6 +593,16 @@ export function ClinicHomepagePage() {
   useEffect(() => {
     localStorage.setItem("careleo_doctor_site_theme", darkMode ? "dark" : "light");
   }, [darkMode]);
+
+  useEffect(() => {
+    function handleScroll() {
+      setShowFloatingBooking(window.scrollY > 720);
+    }
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     if (authError) {
@@ -814,7 +907,6 @@ export function ClinicHomepagePage() {
         city: signupCity || undefined,
         state: signupState || undefined,
         gender: signupGender || undefined,
-        date_of_birth: signupDob || undefined,
       });
       const loginResult = await api.post("/auth/login", { email: signupEmail, password: signupPassword });
       const token = loginResult.data.access_token as string;
@@ -903,7 +995,9 @@ export function ClinicHomepagePage() {
                 alt={hospitalName}
                 className="h-10 w-10 shrink-0 rounded-full border border-white/60 bg-white/90 p-1 object-contain shadow-sm sm:h-12 sm:w-12"
               />
-            ) : <Leaf className="h-5 w-5" style={{ color: brandColors[0] }} />}
+            ) : (
+              <BrandSeal primary="#4B635A" gold={theme.gold} textColor={theme.text} className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" />
+            )}
             <div className="min-w-0">
               <p className="truncate font-display text-lg font-black tracking-tight sm:text-2xl" style={{ color: theme.text }}>{hospitalName}</p>
               <p className="text-xs" style={{ color: theme.textMuted }}>100+ Years of Experience</p>
@@ -984,7 +1078,7 @@ export function ClinicHomepagePage() {
         </div>
       </header>
 
-      <section className="snap-section relative mx-auto grid w-full gap-6 overflow-hidden px-4 pt-8 sm:px-6 lg:grid-cols-2 lg:items-center lg:px-10 2xl:px-14">
+      <section className="snap-section relative mx-auto overflow-hidden px-4 pt-8 sm:px-6 lg:px-10 2xl:px-14">
         <div className="pointer-events-none absolute inset-0">
           <motion.div
             className="absolute -left-24 top-16 h-56 w-56 rounded-full bg-[radial-gradient(circle,_rgba(79,111,82,0.35),_transparent_70%)] blur-3xl"
@@ -997,73 +1091,127 @@ export function ClinicHomepagePage() {
             transition={reduceMotion ? undefined : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
           />
           <div className="absolute bottom-[-20%] left-[45%] h-72 w-72 rounded-full border blur-3xl" style={{ borderColor: darkMode ? "rgba(63,102,111,0.5)" : "rgba(184,211,202,0.5)", backgroundColor: darkMode ? "rgba(15,45,53,0.28)" : "rgba(244,250,245,0.45)" }} />
-          {logo ? (
-            <div className="absolute left-[8%] top-[12%] flex items-center justify-center sm:left-[10%] lg:left-[12%]">
+          <div className="absolute left-[4%] top-[10%] flex items-center justify-center sm:left-[6%] lg:left-[8%]">
+            {logo ? (
               <img
                 src={logo}
                 alt=""
                 aria-hidden="true"
-                className="h-[140px] w-[140px] object-contain sm:h-[280px] sm:w-[280px] lg:h-[360px] lg:w-[360px]"
-                style={{
-                  opacity: darkMode ? 0.16 : 0.12,
-                  filter: darkMode ? "grayscale(1) brightness(1.15)" : "grayscale(1) saturate(0.8)"
-                }}
+                className="h-[180px] w-[180px] object-contain sm:h-[300px] sm:w-[300px] lg:h-[420px] lg:w-[420px]"
+                style={{ opacity: darkMode ? 0.12 : 0.1, filter: darkMode ? "grayscale(1) brightness(1.05)" : "grayscale(1) saturate(0.8)" }}
               />
-            </div>
-          ) : null}
-        </div>
-        <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65 }} className="relative z-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.25em]" style={{ color: theme.textMuted }}>Holistic Medical Ayurveda</p>
-          <h1 className="mt-3 font-display text-3xl font-extrabold leading-tight sm:text-5xl" style={{ color: theme.text }}>
-            <MotionText as="span" text="100+ Years of Healing Through" className="inline-block" delay={0.1} />
-            <span className="block" style={{ color: brandColors[1] }}>
-              <MotionText as="span" text="Precision Ayurveda" className="inline-block" delay={0.18} />
-            </span>
-          </h1>
-          <p className="mt-4 max-w-xl text-base sm:text-lg" style={{ color: theme.textMuted }}>
-            {description}
-          </p>
-          <p className="mt-3 max-w-2xl text-sm sm:text-base" style={{ color: theme.gold }}>
-            Ayurveda nurtures harmony between body, mind, and nature so healing becomes a way of life, not just a treatment.
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <a href="#booking" className="rounded-full px-5 py-2 text-sm font-bold text-white" style={{ background: `linear-gradient(120deg, ${brandColors[0]}, ${brandColors[1]})` }}>
-              Start Healing Journey
-            </a>
-            <a
-              href="#prakriti"
-              className="rounded-full border px-5 py-2 text-sm font-bold"
-              style={{
-                borderColor: theme.border,
-                color: theme.text,
-                backgroundColor: darkMode ? "rgba(24, 60, 67, 0.55)" : "rgba(255, 255, 255, 0.5)"
-              }}
-            >
-              Discover Your Dosha
-            </a>
+            ) : (
+              <BrandSeal primary="#4B635A" gold={theme.gold} textColor={theme.text} faint className="h-[180px] w-[180px] sm:h-[300px] sm:w-[300px] lg:h-[420px] lg:w-[420px]" />
+            )}
           </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1, duration: 0.65 }} className="relative z-10">
-          <Float>
-            <Parallax>
-              <div className="relative overflow-hidden rounded-3xl border p-4 shadow-2xl" style={{ borderColor: theme.border, backgroundColor: darkMode ? "#123139" : "#eef6f1" }}>
-                <img
-                  src={practitionerHeroImage}
-                  alt="Senior Ayurvedic practitioner"
-                  className="h-[280px] w-full rounded-2xl object-contain object-center sm:h-[420px]"
-                  style={{ backgroundColor: darkMode ? "#0b2229" : "#dfeee7" }}
-                />
-                <div className="absolute inset-x-4 bottom-4 rounded-xl px-4 py-2 backdrop-blur sm:inset-x-auto sm:bottom-8 sm:left-8" style={{ backgroundColor: darkMode ? "rgba(7, 27, 33, 0.76)" : "rgba(255, 251, 243, 0.92)" }}>
-                  <p className="font-display text-lg font-bold" style={{ color: theme.text }}>Senior Ayurvedic Practitioner</p>
-                  <p className="mt-1 text-sm font-extrabold" style={{ color: brandColors[1] }}>Dr YP Tiwari</p>
-                  <p className="text-xs" style={{ color: theme.textMuted }}>Dr Yogeshwar Prasad Tiwari | Nadi Pariksha | Panchakarma | Rasayana</p>
-                </div>
+        </div>
+        <div
+          className="relative z-10 overflow-hidden rounded-[36px] border px-6 py-8 shadow-2xl sm:px-8 sm:py-10 lg:px-10"
+          style={{
+            borderColor: darkMode ? "rgba(151, 197, 188, 0.18)" : "rgba(75, 99, 90, 0.18)",
+            background: darkMode
+              ? "linear-gradient(135deg, rgba(23,52,46,0.98), rgba(14,39,34,0.96) 55%, rgba(19,54,65,0.94))"
+              : "linear-gradient(135deg, #4B635A, #5e796f 60%, #6b8176)",
+          }}
+        >
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)] lg:items-center">
+            <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65 }} className="relative">
+              <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em]" style={{ borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.76)" }}>
+                {logo ? (
+                  <img src={logo} alt="" aria-hidden="true" className="h-5 w-5 rounded-full bg-white/90 p-0.5 object-contain" />
+                ) : (
+                  <BrandSeal primary="#d7b46f" gold="#d7b46f" textColor="#fffaf0" className="h-5 w-5" />
+                )}
+                Heritage-Led Clinical Ayurveda
               </div>
-            </Parallax>
-          </Float>
-        </motion.div>
+              <h1 className="mt-5 text-4xl font-extrabold leading-[1.02] text-[#fffaf0] sm:text-6xl" style={{ fontFamily: '"Playfair Display", "Lato", serif' }}>
+                <MotionText as="span" text="100+ Years of Healing Through Precision Ayurveda" className="inline-block" delay={0.08} />
+              </h1>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/82 sm:text-lg">
+                {description} Heritage intuition meets modern clinical discipline through nadi pariksha, structured protocols, and deeply personalized recovery planning.
+              </p>
+              <p className="mt-3 max-w-2xl text-sm leading-6 sm:text-base" style={{ color: "#f3deb0" }}>
+                Ayurveda nurtures harmony between body, mind, and nature so healing becomes a way of life, not just a treatment.
+              </p>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <a href="#booking" className="rounded-full px-6 py-3 text-sm font-bold text-white shadow-lg" style={{ background: "linear-gradient(135deg, #d0a145, #b9882f)" }}>
+                  Start Healing Journey
+                </a>
+                <a href="#prakriti" className="rounded-full border px-6 py-3 text-sm font-bold text-[#fffaf0]" style={{ borderColor: "rgba(255,255,255,0.28)", backgroundColor: "rgba(255,255,255,0.08)" }}>
+                  Discover Your Dosha
+                </a>
+              </div>
+            </motion.div>
+
+            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1, duration: 0.65 }} className="relative min-h-[360px]">
+              <Float>
+                <Parallax>
+                  <div className="relative flex h-full min-h-[360px] items-end justify-center">
+                    <div className="absolute inset-0 rounded-[32px] bg-[radial-gradient(circle_at_50%_30%,rgba(255,255,255,0.18),transparent_58%)]" />
+                    <div className="absolute bottom-0 h-[82%] w-[85%] rounded-[32px] bg-[radial-gradient(circle_at_50%_10%,rgba(255,255,255,0.18),rgba(255,255,255,0.03)_62%,transparent_70%)]" />
+                    <img
+                      src={practitionerHeroImage}
+                      alt="Senior Ayurvedic practitioner"
+                      className="relative z-10 h-[360px] w-auto object-contain drop-shadow-[0_22px_40px_rgba(0,0,0,0.28)] sm:h-[460px]"
+                      style={{ mixBlendMode: darkMode ? "screen" : "multiply" }}
+                    />
+                    <div className="absolute right-0 top-6 z-20 max-w-[240px] rounded-[24px] border px-4 py-4 backdrop-blur-md" style={{ borderColor: "rgba(255,255,255,0.16)", backgroundColor: "rgba(255,250,240,0.1)" }}>
+                      <div className="flex items-center gap-2">
+                        {logo ? (
+                          <img src={logo} alt="" aria-hidden="true" className="h-7 w-7 rounded-full bg-white/90 p-0.5 object-contain" />
+                        ) : (
+                          <BrandSeal primary="#d7b46f" gold="#d7b46f" textColor="#fffaf0" className="h-7 w-7" />
+                        )}
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/76">Senior Ayurvedic Practitioner</p>
+                      </div>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight text-[#fffaf0]">Dr YP Tiwari</p>
+                      <p className="mt-2 text-sm leading-6 text-white/78">
+                        Dr Yogeshwar Prasad Tiwari | Nadi Pariksha | Panchakarma | Rasayana
+                      </p>
+                    </div>
+                  </div>
+                </Parallax>
+              </Float>
+            </motion.div>
+          </div>
+        </div>
       </section>
+
+      <motion.section
+        className="snap-section mx-auto mt-8 w-full px-4 sm:px-6 lg:px-10 2xl:px-14"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="grid gap-4 lg:grid-cols-3">
+          {whyAyurvedaCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.title}
+                className="rounded-[28px] border p-5 shadow-lg"
+                style={{
+                  borderColor: theme.border,
+                  background: darkMode
+                    ? "linear-gradient(160deg, rgba(18,46,41,0.94), rgba(17,39,49,0.96))"
+                    : "linear-gradient(160deg, #f8f5e7, #eef5ee)",
+                }}
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg, rgba(185,136,47,0.18), rgba(215,180,111,0.3))" }}>
+                  <Icon className="h-5 w-5" style={{ color: theme.gold }} />
+                </div>
+                <p className="mt-4 text-lg font-bold tracking-tight" style={{ color: theme.text }}>
+                  {card.title}
+                </p>
+                <p className="mt-2 text-sm leading-6" style={{ color: theme.textMuted }}>
+                  {card.body}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </motion.section>
 
       <motion.section
         className="snap-section mx-auto mt-10 w-full px-4 sm:px-6 lg:px-10 2xl:px-14"
@@ -1073,7 +1221,7 @@ export function ClinicHomepagePage() {
         transition={{ duration: 0.5 }}
       >
         <div
-          className="rounded-3xl border p-6 shadow-xl sm:p-8"
+          className="relative overflow-hidden rounded-3xl border p-6 shadow-xl sm:p-8"
           style={{
             borderColor: theme.border,
             background: darkMode
@@ -1081,6 +1229,19 @@ export function ClinicHomepagePage() {
               : "linear-gradient(120deg, #eef7f2, #f8f2e4)"
           }}
         >
+          <div className="pointer-events-none absolute" />
+          <div className="relative">
+            {logo ? (
+              <img
+                src={logo}
+                alt=""
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 object-contain sm:h-44 sm:w-44"
+                style={{ opacity: darkMode ? 0.1 : 0.08, filter: darkMode ? "grayscale(1) brightness(1.05)" : "grayscale(1) saturate(0.8)" }}
+              />
+            ) : (
+              <BrandSeal primary="#4B635A" gold={theme.gold} textColor={theme.text} faint className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 sm:h-44 sm:w-44" />
+            )}
           <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: theme.textMuted }}>
             Arogya Ashram Philosophy
           </p>
@@ -1116,11 +1277,24 @@ export function ClinicHomepagePage() {
               </div>
             ))}
           </div>
+          </div>
         </div>
       </motion.section>
 
       <motion.section id="prakriti" className="snap-section mx-auto mt-12 w-full px-4 sm:px-6 lg:px-10 2xl:px-14" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
         <div className="rounded-3xl border p-6 shadow-xl sm:p-8" style={{ borderColor: theme.border, backgroundColor: theme.surfaceSoft }}>
+          <div className="relative">
+          {logo ? (
+            <img
+              src={logo}
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-6 -top-8 h-28 w-28 object-contain"
+              style={{ opacity: darkMode ? 0.1 : 0.08, filter: darkMode ? "grayscale(1) brightness(1.05)" : "grayscale(1) saturate(0.8)" }}
+            />
+          ) : (
+            <BrandSeal primary="#4B635A" gold={theme.gold} textColor={theme.text} faint className="pointer-events-none absolute -right-6 -top-8 h-28 w-28" />
+          )}
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" style={{ color: brandColors[1] }} />
             <MotionText as="h2" text={quizLanguage === "hi" ? "प्रकृति प्रश्नावली" : "Prakriti Quiz"} className="font-display text-3xl font-extrabold" style={{ color: theme.text }} />
@@ -1151,7 +1325,15 @@ export function ClinicHomepagePage() {
             </div>
           </div>
 
-          <div className="mt-4 h-2 overflow-hidden rounded-full" style={{ backgroundColor: darkMode ? "#244852" : "#d6e6df" }}>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              {quizLanguage === "hi" ? `चरण ${quizStep + 1} / ${activeQuizQuestions.length}` : `Step ${quizStep + 1} of ${activeQuizQuestions.length}`}
+            </p>
+            <p className="text-xs font-semibold" style={{ color: theme.gold }}>
+              {Math.round(quizProgress)}%
+            </p>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full" style={{ backgroundColor: darkMode ? "#244852" : "#d6e6df" }}>
             <motion.div className="h-full rounded-full" style={{ backgroundColor: brandColors[0] }} animate={{ width: `${quizProgress}%` }} />
           </div>
 
@@ -1197,28 +1379,41 @@ export function ClinicHomepagePage() {
               </motion.div>
             ) : (
               <motion.div key={quizStep} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="mt-6">
-                <p className="text-sm font-semibold" style={{ color: theme.textMuted }}>
-                  {quizLanguage === "hi"
-                    ? `प्रश्न ${quizStep + 1} / ${activeQuizQuestions.length}`
-                    : `Question ${quizStep + 1} of ${activeQuizQuestions.length}`}
-                </p>
                 <h3 className="mt-1 font-display text-2xl font-bold" style={{ color: theme.text }}>{activeQuizQuestions[quizStep].question}</h3>
                 <p className="mt-1 text-xs" style={{ color: theme.textMuted }}>{activeQuizQuestions[quizStep].hint}</p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  {activeQuizQuestions[quizStep].options.map((option) => (
-                    <button
-                      key={option.label}
-                      onClick={() => answerQuiz(option)}
-                      className="rounded-xl border px-4 py-3 text-left text-sm font-semibold transition hover:-translate-y-0.5 hover:shadow-md"
-                      style={{ borderColor: theme.border, backgroundColor: theme.surface, color: theme.text }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                  {activeQuizQuestions[quizStep].options.map((option, optionIndex) => {
+                    const selected = quizAnswers[quizStep] === option.dosha;
+                    return (
+                      <button
+                        key={option.label}
+                        onClick={() => answerQuiz(option)}
+                        className="relative overflow-hidden rounded-[24px] border px-4 py-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
+                        style={{
+                          borderColor: selected ? "#4B635A" : theme.border,
+                          backgroundColor: selected ? (darkMode ? "rgba(75,99,90,0.2)" : "rgba(75,99,90,0.08)") : theme.surface,
+                          color: theme.text,
+                          boxShadow: selected ? "0 0 0 1px rgba(75,99,90,0.25)" : "none",
+                        }}
+                      >
+                        {selected ? (
+                          <CheckCircle2 className="absolute right-3 top-3 h-5 w-5" style={{ color: "#4B635A" }} />
+                        ) : null}
+                        <div className="mb-3 flex h-24 items-center justify-center rounded-2xl" style={{ background: darkMode ? "rgba(255,255,255,0.03)" : "rgba(75,99,90,0.05)" }}>
+                          {renderBodyTypeVisual(optionIndex, "#4B635A", theme.gold)}
+                        </div>
+                        <p className="text-sm font-bold leading-6">{option.label}</p>
+                        <p className="mt-2 text-xs leading-5" style={{ color: theme.textMuted }}>
+                          {option.dosha === "Vata" ? "Light, mobile, dry tendency" : option.dosha === "Pitta" ? "Balanced frame, active metabolism" : "Stable, grounded, deeply nourished"}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
+          </div>
         </div>
       </motion.section>
 
@@ -1261,16 +1456,31 @@ export function ClinicHomepagePage() {
             <HeartPulse className="h-5 w-5" style={{ color: brandColors[1] }} />
             <h2 className="font-display text-3xl font-extrabold" style={{ color: theme.text }}>Path to Recovery</h2>
           </div>
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 grid gap-4 lg:grid-cols-4">
             {timelineSteps.map((step, index) => {
               const Icon = step.icon;
               const active = timelineIndex === index;
               return (
-                <button key={step.title} onClick={() => setTimelineIndex(index)} className="flex w-full items-start gap-3 rounded-xl border p-4 text-left transition" style={{ borderColor: theme.border, backgroundColor: active ? theme.surface : theme.surfaceCard }}>
-                  <Icon className="mt-0.5 h-5 w-5" style={{ color: active ? brandColors[1] : theme.textMuted }} />
+                <button
+                  key={step.title}
+                  onClick={() => setTimelineIndex(index)}
+                  className="relative w-full rounded-[24px] border p-4 text-left transition"
+                  style={{ borderColor: theme.border, backgroundColor: active ? theme.surface : theme.surfaceCard }}
+                >
+                  {index < timelineSteps.length - 1 ? (
+                    <span className="pointer-events-none absolute left-[calc(100%-0.5rem)] top-8 hidden h-[2px] w-8 lg:block" style={{ backgroundColor: active ? brandColors[1] : theme.border }} />
+                  ) : null}
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: active ? "rgba(75,99,90,0.12)" : theme.surface }}>
+                      <Icon className="h-5 w-5" style={{ color: active ? brandColors[1] : theme.textMuted }} />
+                    </div>
+                    <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: theme.gold }}>
+                      Step {index + 1}
+                    </span>
+                  </div>
                   <div>
-                    <p className="font-display text-lg font-bold" style={{ color: theme.text }}>{step.title}</p>
-                    <p className="text-sm" style={{ color: theme.textMuted }}>{step.detail}</p>
+                    <p className="mt-4 font-display text-lg font-bold" style={{ color: theme.text }}>{step.title}</p>
+                    <p className="mt-2 text-sm leading-6" style={{ color: theme.textMuted }}>{step.detail}</p>
                   </div>
                 </button>
               );
@@ -1292,15 +1502,33 @@ export function ClinicHomepagePage() {
           </div>
 
           <AnimatePresence mode="wait">
-            <motion.div key={testimonialIndex} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -22 }} className="mt-5 rounded-2xl border p-5" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+            <motion.div key={testimonialIndex} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -22 }} className="relative mt-5 rounded-2xl border p-5" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+              <Quote className="pointer-events-none absolute right-5 top-5 h-12 w-12 opacity-10" style={{ color: brandColors[0] }} />
               <div className="flex gap-1">
                 {Array.from({ length: testimonials[testimonialIndex].rating }).map((_, idx) => (
                   <Star key={idx} className="h-4 w-4" style={{ fill: theme.gold, color: theme.gold }} />
                 ))}
               </div>
-              <p className="mt-3 text-sm leading-6" style={{ color: theme.textMuted }}>"{testimonials[testimonialIndex].text}"</p>
-              <p className="mt-4 font-display text-lg font-bold" style={{ color: theme.text }}>{testimonials[testimonialIndex].name}</p>
-              <p className="text-xs" style={{ color: theme.textMuted }}>{testimonials[testimonialIndex].concern}</p>
+              <p className="mt-3 text-sm leading-6" style={{ color: theme.textMuted }}>
+                "{expandedStoryIndex === testimonialIndex ? testimonials[testimonialIndex].text : getStoryPreview(testimonials[testimonialIndex].text)}"
+              </p>
+              <button
+                type="button"
+                onClick={() => setExpandedStoryIndex((value) => (value === testimonialIndex ? null : testimonialIndex))}
+                className="mt-2 text-xs font-bold uppercase tracking-[0.16em]"
+                style={{ color: brandColors[0] }}
+              >
+                {expandedStoryIndex === testimonialIndex ? "Read Less" : "Read More"}
+              </button>
+              <div className="mt-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold" style={{ backgroundColor: "rgba(75,99,90,0.12)", color: brandColors[0] }}>
+                  {testimonials[testimonialIndex].name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
+                </div>
+                <div>
+                  <p className="font-display text-lg font-bold" style={{ color: theme.text }}>{testimonials[testimonialIndex].name}</p>
+                  <p className="text-xs" style={{ color: theme.textMuted }}>{testimonials[testimonialIndex].concern}</p>
+                </div>
+              </div>
             </motion.div>
           </AnimatePresence>
         </div>
@@ -1515,7 +1743,6 @@ export function ClinicHomepagePage() {
                             <option value="female">Female</option>
                             <option value="other">Other</option>
                           </select>
-                          <input value={signupDob} onChange={(e) => setSignupDob(e.target.value)} className="rounded-[22px] border p-3.5 shadow-sm" style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText, boxShadow: darkMode ? "inset 0 1px 0 rgba(255,255,255,0.04)" : "inset 0 1px 0 rgba(255,255,255,0.55)" }} type="date" />
                           <input
                             value={signupPincode}
                             onChange={(e) => resolvePincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -1571,11 +1798,15 @@ export function ClinicHomepagePage() {
             </motion.div>
           ) : null}
 
-          <form onSubmit={bookAppointment} className="mt-5 grid gap-3 sm:grid-cols-2">
+          <form onSubmit={bookAppointment} className="mt-6 grid gap-y-5 gap-x-4 sm:grid-cols-2">
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="rounded-2xl border p-4 sm:col-span-2" style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }} placeholder="Symptoms / Notes (optional)" />
+              <button type="submit" className="rounded-2xl px-4 py-3.5 text-sm font-extrabold text-white sm:col-span-2" style={{ background: "linear-gradient(135deg, #4B635A, #799285)" }}>
+                Request Appointment
+              </button>
               <input
                 value={bookingName}
                 onChange={(e) => setBookingName(e.target.value)}
-                className="rounded-xl border p-3"
+                className="rounded-2xl border p-4"
                 style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }}
                 placeholder="Full Name"
                 required
@@ -1584,7 +1815,7 @@ export function ClinicHomepagePage() {
                 <input
                   value={bookingEmail}
                   onChange={(e) => setBookingEmail(e.target.value)}
-                  className="rounded-xl border p-3"
+                  className="rounded-2xl border p-4"
                   style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }}
                   placeholder="Email"
                   type="email"
@@ -1594,7 +1825,7 @@ export function ClinicHomepagePage() {
               <input
                 value={bookingPhone}
                 onChange={(e) => setBookingPhone(e.target.value)}
-                className="rounded-xl border p-3"
+                className="rounded-2xl border p-4"
                 style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }}
                 placeholder="Phone Number"
                 required
@@ -1602,7 +1833,7 @@ export function ClinicHomepagePage() {
               <select
                 value={bookingGender}
                 onChange={(e) => setBookingGender(e.target.value)}
-                className="rounded-xl border p-3"
+                className="rounded-2xl border p-4"
                 style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }}
               >
                 <option value="">Select Gender</option>
@@ -1610,8 +1841,8 @@ export function ClinicHomepagePage() {
                 <option value="female">Female</option>
                 <option value="other">Other</option>
               </select>
-              <input value={appointmentDate} onChange={(e) => setAppointmentDate(e.target.value)} className="rounded-xl border p-3" style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }} type="date" required />
-              <input value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} className="rounded-xl border p-3" style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }} type="time" required />
+              <input value={appointmentDate} onChange={(e) => setAppointmentDate(e.target.value)} className="rounded-2xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }} type="date" required />
+              <input value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} className="rounded-2xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }} type="time" required />
               {authRole === "patient" ? (
                 <div className="sm:col-span-2">
                   <label className="mb-1 block text-xs font-semibold" style={{ color: theme.text }}>Upload Medical Files (PDF/JPG/PNG)</label>
@@ -1620,7 +1851,7 @@ export function ClinicHomepagePage() {
                     multiple
                     accept=".pdf,.png,.jpg,.jpeg"
                     onChange={(e) => setMedicalFiles(Array.from(e.target.files || []))}
-                    className="w-full rounded-xl border p-3 text-sm"
+                    className="w-full rounded-2xl border p-4 text-sm"
                     style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }}
                   />
                   {medicalFiles.length > 0 ? (
@@ -1628,10 +1859,6 @@ export function ClinicHomepagePage() {
                   ) : null}
                 </div>
               ) : null}
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="rounded-xl border p-3 sm:col-span-2" style={{ borderColor: theme.border, backgroundColor: theme.inputBg, color: theme.inputText }} placeholder="Symptoms / Notes (optional)" />
-              <button type="submit" className="rounded-xl px-4 py-3 text-sm font-extrabold text-white sm:col-span-2" style={{ backgroundColor: brandColors[1] }}>
-                Request Appointment
-              </button>
             </form>
           {uploadStatus ? <p className="mt-2 text-xs font-semibold" style={{ color: theme.text }}>{uploadStatus}</p> : null}
           {bookStatus ? <p className="mt-3 text-sm font-semibold" style={{ color: theme.text }}>{bookStatus}</p> : null}
@@ -1706,6 +1933,22 @@ export function ClinicHomepagePage() {
           ) : null}
         </div>
       </motion.section>
+
+      <AnimatePresence>
+        {showFloatingBooking ? (
+          <motion.a
+            href="#booking"
+            initial={{ opacity: 0, y: 24, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.92 }}
+            className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-3 rounded-full px-5 py-3 text-sm font-bold text-white shadow-2xl"
+            style={{ background: "linear-gradient(135deg, #4B635A, #b9882f)" }}
+          >
+            <CalendarDays className="h-4 w-4" />
+            Book Now
+          </motion.a>
+        ) : null}
+      </AnimatePresence>
 
     </PageFade>
   );
