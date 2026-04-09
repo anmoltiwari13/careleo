@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { api } from "../api/client";
 import { GlassCard } from "../components/GlassCard";
 import { MotionText, PageFade, Parallax } from "../components/Motion";
@@ -35,6 +35,10 @@ export function HospitalPublicPage() {
       }
     });
   }, []);
+
+  if (hospital && doctors.length > 0) {
+    return <Navigate to={`/clinic/${doctors[0].id}`} replace />;
+  }
 
   if (!hospital) {
     return (

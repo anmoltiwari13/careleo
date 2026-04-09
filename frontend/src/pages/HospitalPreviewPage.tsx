@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { GlassCard } from "../components/GlassCard";
 import { MotionText, PageFade } from "../components/Motion";
@@ -22,6 +22,10 @@ export function HospitalPreviewPage() {
     });
   }, [id]);
 
+  if (doctors.length > 0) {
+    return <Navigate to={`/clinic/${doctors[0].id}`} replace />;
+  }
+
   return (
     <PageFade className="mx-auto max-w-6xl space-y-6 px-6 pb-14">
       <GlassCard className="snap-section">
@@ -34,7 +38,7 @@ export function HospitalPreviewPage() {
             <h3 className="font-display text-xl font-semibold">Doctor #{doc.id}</h3>
             <p className="mt-2">{doc.specialization}</p>
             <p className="text-sm text-slate-500">{doc.availability ?? "Please contact front desk"}</p>
-            <button className="mt-4 rounded-lg bg-sky-500 px-4 py-2 font-semibold text-white">Book Appointment</button>
+            <Link to={`/clinic/${doc.id}`} className="mt-4 inline-block rounded-lg bg-sky-500 px-4 py-2 font-semibold text-white">Open Clinic</Link>
           </GlassCard>
         ))}
       </div>

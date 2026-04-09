@@ -204,6 +204,15 @@ export function AdminDashboardPage({ onLogout }: { onLogout: () => void }) {
   }
 
   function openHospitalWebsite(hospital: Hospital) {
+    const clinicDoctors = doctors
+      .filter((doctor) => doctor.hospital_id === hospital.id)
+      .sort((left, right) => left.doctor_id - right.doctor_id);
+
+    if (clinicDoctors.length > 0) {
+      window.open(`/clinic/${clinicDoctors[0].doctor_id}`, "_blank");
+      return;
+    }
+
     if (hospital.domain) {
       const domainUrl = hospital.domain.startsWith("http://") || hospital.domain.startsWith("https://") ? hospital.domain : `https://${hospital.domain}`;
       window.open(domainUrl, "_blank");
